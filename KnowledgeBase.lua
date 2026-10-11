@@ -6,8 +6,8 @@ local UI, L, A = addon.UI, addon.L, addon.APIHelp
 function K:BuildIndex()
  if self.entries or not A.ready then return end
  self.entries = {}
- for name in pairs(A.index) do
-  self.entries[#self.entries + 1] = { name = name, lower = name:lower(), body = A:FullDescription(name):lower() }
+ for name, entry in pairs(A.catalog or A.index) do
+  self.entries[#self.entries + 1] = { name = name, kind = entry.kind or 'apiFunctions', lower = name:lower(), body = A:FullDescription(name):lower() }
  end
  table.sort(self.entries, function(a, b) return a.name < b.name end)
 end
@@ -24,7 +24,7 @@ function K:Find(query)
   if not nameMatch then
    for _, word in ipairs(words) do if not entry.body:find(word, 1, true) then found = false; break end end
   end
-  if found then
+  if found and (not self.category or entry.kind == self.category) then
    matches[#matches + 1] = { name = entry.name, score = entry.lower == compact and 0 or (nameMatch == 1 and 1 or (nameMatch and 2 or 3)) }
   end
  end
@@ -32,22 +32,60 @@ function K:Find(query)
  return matches
 end
 
-function K:Select(name)
+function K:Select(name, navigating)
  local panel = self.panel
+ if not navigating then self.history = {} end
+ if addon.DebugUI then addon.DebugUI:HideTooltip(panel.detailContent, 'knowledge-selection') end
  panel.selected = name
- panel.detail:SetText(A:FullDescription(name, true) or '')
- panel.detailScroll:SetVerticalScroll(0); panel.detailScroll.bar:SetValue(0)
+ panel.detail:SetText(A:FullDescription(name, true, true) or '')
+ if panel.back then panel.back:SetShown(self.history and #self.history > 0 or false) end
  self:LayoutDetail()
+ panel.detailScroll:SetVerticalScroll(0); panel.detailScroll.bar:SetValue(0)
  for _, row in ipairs(panel.rows) do
   row.selected:SetShown(row.name == name)
  end
 end
 
+function K:Follow(link)
+ local name = type(link) == 'string' and link:match('^lwapi:(.+)$')
+ if not name or not A.catalog[name] or name == self.panel.selected then return end
+ self.history = self.history or {}
+ self.history[#self.history + 1] = { name = self.panel.selected, scroll = self.panel.detailScroll:GetVerticalScroll() }
+ self:Select(name, true)
+end
+
+function K:Back()
+ local previous = self.history and table.remove(self.history)
+ if not previous then return end
+ self:Select(previous.name, true)
+ self.panel.detailScroll:SetVerticalScroll(previous.scroll); self.panel.detailScroll.bar:SetValue(previous.scroll)
+end
+
+function K:Categories(owner)
+ local items = {}
+ local categories = { 'apiFunctions', 'apiSystems', 'apiStructures', 'apiEnums', 'apiEvents', 'apiCallbacks', 'apiConstants', 'apiOther' }
+ table.sort(categories, function(a, b) return L[a]:lower() < L[b]:lower() end)
+ table.insert(categories, 1, 'apiAll')
+ for _, key in ipairs(categories) do
+  local category = key
+  items[#items + 1] = { text = L[key], selected = (self.category or 'apiAll') == key, action = function()
+   self.category = category ~= 'apiAll' and category or nil
+   self.panel.category.text:SetText(L[category]); self:Search()
+  end }
+ end
+ addon.Workspace:OpenMenu(owner, items)
+ self.menuOpen = true
+end
+
 function K:LayoutDetail()
  local panel = self.panel
  panel.detailContent:SetWidth(math.max(1, panel.detailScroll:GetWidth()))
+ panel.detail:SetJustifyV('TOP')
+ panel.detail:SetHeight(0)
  panel.detail:SetWidth(math.max(1, panel.detailScroll:GetWidth() - 12))
- panel.detailContent:SetHeight(math.max(1, panel.detail:GetStringHeight() + 12))
+ local height = math.max(1, panel.detail:GetStringHeight())
+ panel.detail:SetHeight(height)
+ panel.detailContent:SetHeight(height + 12)
  panel.detailScroll:UpdateScrollChildRect()
 end
 
@@ -55,6 +93,7 @@ function K:Search()
  local panel = self.panel
  if not panel then return end
  panel.delay = nil
+ self.history = {}; if panel.back then panel.back:Hide() end
  local matches = self:Find(panel.search:GetText())
  local shown = math.min(#matches, 100)
  panel.status:SetText(not A.ready and (A.pending and L.apiPending or L.apiUnavailable) or string.format(L.apiResults, #matches, shown))
@@ -89,7 +128,7 @@ function K:Show(name)
  addon.Workspace:HidePanels(self.panel)
  A:Load(true)
  if not self.panel then self:Create() end
- if name then self.panel.search:SetText(name) end
+ if name then self.category = nil; self.panel.category.text:SetText(L.apiAll); self.panel.search:SetText(name) end
  self.panel:Show(); self:Search()
  if name then self:Select(name) end
  if addon.Query.Console.input then addon.Query.Console.input:ClearFocus() end
@@ -157,12 +196,25 @@ function K:Create()
  local title = UI:Text(panel, L.knowledgeBase, 15); title:SetPoint('TOPLEFT', 14, -14)
  local close = UI:Button(panel, 'close', _G.CLOSE, function() panel:Hide() end); close:SetPoint('TOPRIGHT', -6, -7)
  panel.search = CreateFrame('EditBox', nil, panel)
- panel.search:SetPoint('TOPLEFT', 14, -44); panel.search:SetPoint('TOPRIGHT', -14, -44); panel.search:SetHeight(28)
+ panel.search:SetPoint('TOPLEFT', 14, -44); panel.search:SetPoint('TOPRIGHT', -190, -44); panel.search:SetHeight(28)
  panel.search:SetFontObject(ChatFontNormal); panel.search:SetAutoFocus(false); panel.search:SetTextInsets(7, 7, 0, 0)
  UI:Background(panel.search, UI.colors.hover); UI:Tooltip(panel.search, L.apiSearch)
  panel.search:SetScript('OnTextChanged', function() panel.delay = 0.15 end)
+ UI:SearchClear(panel.search, function() self:Search() end)
  panel.search:SetScript('OnEnterPressed', function() self:Search(); panel.search:ClearFocus() end)
  panel.search:SetScript('OnEscapePressed', function() panel.search:ClearFocus(); panel:Hide() end)
+ panel.category = CreateFrame('Button', nil, panel)
+ panel.category:SetPoint('TOPLEFT', panel.search, 'TOPRIGHT', 8, 0); panel.category:SetPoint('TOPRIGHT', -14, -44); panel.category:SetHeight(28)
+ UI:Background(panel.category, UI.colors.hover)
+ panel.category.text = UI:Text(panel.category, L[self.category or 'apiAll'], 11)
+ panel.category.text:SetPoint('LEFT', 7, 0); panel.category.text:SetPoint('RIGHT', -16, 0)
+ panel.category.text:SetWordWrap(false)
+ local arrow = UI:Text(panel.category, 'v', 10); arrow:SetPoint('RIGHT', -5, 0)
+ panel.category:SetScript('OnClick', function() self:Categories(panel.category) end)
+ panel.back = UI:Button(panel, 'previous', L.navigationBack, function() self:Back() end)
+ panel.back:SetPoint('RIGHT', close, 'LEFT', -6, 0); panel.back:Hide()
+ -- Leave both title buttons outside the mouse-enabled drag surface.
+ panel.dragHandle:SetPoint('TOPRIGHT', panel.back, 'TOPLEFT', -4, 7)
  panel.status = UI:Text(panel, '', 10); panel.status:SetPoint('BOTTOMLEFT', 14, 12); panel.status:SetPoint('RIGHT', -14, 0)
  panel.list = UI:Scroll(panel); panel.list:SetPoint('TOPLEFT', 14, -85); panel.list:SetPoint('BOTTOMLEFT', 14, 35); panel.list:SetWidth(math.floor(panel:GetWidth() * 0.38))
  panel.content = CreateFrame('Frame', nil, panel.list); panel.content:SetSize(panel.list:GetWidth(), 1); panel.list:SetScrollChild(panel.content)
@@ -171,6 +223,19 @@ function K:Create()
  panel.detailContent = CreateFrame('Frame', nil, panel.detailScroll); panel.detailContent:SetSize(1, 1); panel.detailScroll:SetScrollChild(panel.detailContent)
  panel.detail = UI:Text(panel.detailContent, '', 12); panel.detail:SetPoint('TOPLEFT', 6, -6); panel.detail:SetWordWrap(true)
  panel.detailContent:EnableMouse(true)
+ panel.detailContent:SetHyperlinksEnabled(true)
+ panel.detailContent:SetScript('OnHyperlinkClick', function(_, link, _, button)
+  if button == 'LeftButton' then self:Follow(link) end
+ end)
+ panel.detailContent:SetScript('OnHyperlinkEnter', function(_, link)
+  local name = type(link) == 'string' and link:match('^lwapi:(.+)$')
+  if name and A.catalog[name] and addon.DebugUI then
+   addon.DebugUI:APITooltip(panel.detailContent, A:Preview(name))
+  end
+ end)
+ panel.detailContent:SetScript('OnHyperlinkLeave', function()
+  if addon.DebugUI then addon.DebugUI:HideTooltip(panel.detailContent, 'knowledge-link-leave') end
+ end)
  panel.detailContent:SetScript('OnMouseUp', function(_, button)
   if button == 'RightButton' and panel.selected then self:CopyMenu(panel.detailContent, panel.selected) end
  end)
@@ -182,6 +247,7 @@ function K:Create()
  panel:SetScript('OnHide', function() panel.search:ClearFocus(); panel.delay = nil
   if self.copyPanel then self.copyPanel:Hide() end
   if self.menuOpen and W.contextMenu then W.contextMenu:Hide(); self.menuOpen = nil end
+  if addon.DebugUI then addon.DebugUI:HideTooltip(panel.detailContent, 'knowledge-hidden') end
   self:StopSizing()
  end)
  panel:SetScript('OnSizeChanged', function()
@@ -203,14 +269,14 @@ function K:Create()
 end
 
 function K:CopyMenu(owner, name)
- if not A.index[name] then return end
+ if not (A.catalog and A.catalog[name] or A.index[name]) then return end
  GameTooltip:Hide()
  self.menuOpen = true
- addon.Workspace:OpenMenu(owner, { { text = L.apiCopyFunction, action = function() self.menuOpen = nil; self:CopyFunction(name) end } })
+ addon.Workspace:OpenMenu(owner, { { text = L.apiCopyName, action = function() self.menuOpen = nil; self:CopyFunction(name) end } })
 end
 
 function K:CopyFunction(name)
- if not A.index[name] then return end
+ if not (A.catalog and A.catalog[name] or A.index[name]) then return end
  -- Addons use selectable text; the native clipboard API has restricted access.
  if not self.copyPanel then
   local panel = CreateFrame('Frame', 'LuaWorkbenchCopyFunction', self.panel)
@@ -218,7 +284,7 @@ function K:CopyFunction(name)
   panel:SetSize(math.min(440, self.panel:GetWidth() - 24), 130); panel:SetPoint('CENTER')
   panel:SetFrameLevel(self.panel:GetFrameLevel() + 20); panel:EnableMouse(true); panel:SetClampedToScreen(true)
   UI:Background(panel, UI.colors.background); UI:Border(panel, { 0.25, 0.3, 0.38, 1 })
-  local title = UI:Text(panel, L.apiCopyFunction, 14); title:SetPoint('TOPLEFT', 14, -14)
+  local title = UI:Text(panel, L.apiCopyName, 14); title:SetPoint('TOPLEFT', 14, -14)
   local close = UI:Button(panel, 'close', _G.CLOSE, function() panel:Hide() end); close:SetPoint('TOPRIGHT', -5, -5)
   local box = CreateFrame('EditBox', nil, panel); panel.box = box
   box:SetPoint('TOPLEFT', 14, -45); box:SetPoint('TOPRIGHT', -14, -45); box:SetHeight(28)

@@ -176,6 +176,7 @@ function S:CreateLibrary()
  end
  panel.search = field(L.textSnippetSearch, 14, -49, 205)
  panel.search:SetScript('OnTextChanged', function() self:RefreshLibrary() end)
+ UI:SearchClear(panel.search)
  panel.name = field(L.textSnippetName, 234, -49, panel:GetWidth() - 248)
  panel.name:SetMaxLetters(120)
  local scroll = UI:Scroll(panel); scroll:SetPoint('TOPLEFT', 14, -102); scroll:SetPoint('BOTTOMLEFT', 14, 66); scroll:SetWidth(195)

@@ -40,12 +40,67 @@ function A:Load(force)
    end
    if not (_G.issecretvalue and _G.issecretvalue(value)) and type(value) == 'function' then self.index[name] = info end
   end
+  self:Catalog(docs)
   self.ready = true
  else
   addon.Query.Console:SetStatus(L.apiUnavailable, true)
  end
  self.loading, self.pending = nil, nil
  self:Refresh()
+end
+
+-- Keep documentation separate from globals eligible for editor highlighting.
+function A:Catalog(docs)
+ self.catalog, self.aliases, self.byInfo = {}, {}, {}
+ local function alias(key, name)
+  if not key or key == '' then return end
+  if self.aliases[key] == nil then self.aliases[key] = name
+  elseif self.aliases[key] ~= name then self.aliases[key] = false end
+ end
+ local function add(info, kind, name)
+  if self.byInfo[info] then return end
+  if self.catalog[name] then name = (info.System and info.System.Name or kind) .. '.' .. name end
+  self.catalog[name] = { info = info, kind = kind, name = name }
+  self.byInfo[info] = name
+  alias(name, name); alias(info.Name, name)
+  return name
+ end
+ for _, info in ipairs(docs.systems or {}) do
+  local name = add(info, 'apiSystems', info.Namespace or info.Name)
+  if info.Type == 'ScriptObject' then alias(info.Name:gsub('API$', ''), name) end
+ end
+ for _, info in ipairs(docs.tables or {}) do
+  local enum = info.Type == 'Enumeration'
+  add(info, enum and 'apiEnums' or (info.Type == 'Structure' and 'apiStructures' or (info.Type == 'CallbackType' and 'apiCallbacks' or (info.Type == 'Constants' and 'apiConstants' or 'apiOther'))), enum and ('Enum.' .. info.Name) or info.Name)
+ end
+ for _, info in ipairs(docs.functions or {}) do
+  local system = info.System
+  local namespace = system and system.Namespace
+  local object = system and system.Type ~= 'System' and system.Type ~= nil
+  local name = namespace and namespace ~= '' and (namespace .. '.' .. info.Name)
+   or object and (system.Name:gsub('API$', '') .. ':' .. info.Name) or info.Name
+  add(info, 'apiFunctions', name)
+ end
+ for _, info in ipairs(docs.events or {}) do add(info, 'apiEvents', info.LiteralName or info.Name) end
+ for _, info in ipairs(docs.callbacks or {}) do add(info, 'apiCallbacks', info.Name) end
+ self.text = {}
+end
+
+function A:Reference(name, context)
+ if self.catalog and self.catalog[name] then return name end
+ local match = self.aliases and self.aliases[name]
+ if match then return match end
+ -- Resolve duplicate type names within their documented system only.
+ local owner = context and (context.System or context)
+ if owner then
+  for _, info in ipairs(owner.Tables or {}) do
+   if info.Name == name then return self.byInfo[info] end
+  end
+ end
+end
+
+function A:Link(name, label)
+ return '|Hlwapi:' .. name .. '|h' .. label .. '|h'
 end
 
 function A:SetEnabled(enabled)
@@ -129,18 +184,28 @@ function A:RestrictionKeys(info)
  return keys
 end
 
-function A:FullDescription(name, rich)
+function A:FullDescription(name, rich, links)
  if not rich and self.text[name] then return self.text[name] end
- local info = self.index[name]
+ local entry = self.catalog and self.catalog[name]
+ local info = entry and entry.info or self.index[name]
  if not info then return end
  local function color(text, kind)
   text = text:gsub('|', '||')
   if not rich then return text end
   return '|c' .. (kind == 'heading' and 'ffe6c07b' or addon.Query.Editor:Color(kind)) .. text .. '|r'
  end
+ local function reference(label, target)
+  local text = color(label, 'blizzardFunction')
+  local destination = target or self:Reference(label, info)
+  return rich and links and destination and self:Link(destination, text) or text
+ end
  local args = {}
  for _, field in ipairs(info.Arguments or {}) do args[#args + 1] = color(field.Name, 'parameter') .. ((field.Nilable or field.Default ~= nil) and '?' or '') end
- local lines = { color(L.apiFunction, 'heading'), color(name, 'blizzardFunction') .. '(' .. table.concat(args, ', ') .. ')' }
+ local callable = not entry or entry.kind == 'apiFunctions' or entry.kind == 'apiCallbacks'
+ local lines = { color(entry and entry.kind == 'apiCallbacks' and L.apiCallbacks or (callable and L.apiFunction or L[entry.kind]), 'heading'), color(name, 'blizzardFunction') .. (callable and ('(' .. table.concat(args, ', ') .. ')') or '') }
+ if info.System and self.byInfo and self.byInfo[info.System] then
+  lines[#lines + 1] = reference(info.System.Namespace or info.System.Name, self.byInfo[info.System])
+ end
  local function documentation(values)
   for _, detail in ipairs(values or {}) do lines[#lines + 1] = detail:gsub('|', '||') end
  end
@@ -149,7 +214,10 @@ function A:FullDescription(name, rich)
   lines[#lines + 1] = ''; lines[#lines + 1] = color(title, 'heading')
   for _, field in ipairs(values) do
    local typeName = field.Type == 'bool' and 'boolean' or field.Type or '?'
-   local line = color(field.Name, 'parameter') .. ': ' .. color(typeName, 'blizzardFunction') .. (field.Nilable and (' || ' .. color('nil', 'literal')) or '')
+   local line = color(field.Name, 'parameter') .. ': ' .. reference(typeName) .. (field.InnerType and ('<' .. reference(field.InnerType) .. '>') or '') .. (field.Nilable and (' || ' .. color('nil', 'literal')) or '')
+   if field.EnumValue ~= nil then line = line .. ' = ' .. color(tostring(field.EnumValue), 'number') end
+   if field.Value ~= nil then line = line .. ' = ' .. color(self:MetadataValue(field.Value), 'literal') end
+   if field.Mixin then line = line .. ' (' .. reference(field.Mixin) .. ')' end
    local notes = {}
    if arguments and (field.Nilable or field.Default ~= nil) then notes[#notes + 1] = L.apiOptional end
    if field.Default ~= nil then
@@ -167,6 +235,25 @@ function A:FullDescription(name, rich)
  end
  if info.Documentation and #info.Documentation > 0 then lines[#lines + 1] = ''; documentation(info.Documentation) end
  fields(L.apiArguments, info.Arguments, true); fields(L.apiReturns, info.Returns, false)
+ fields(L.apiFields, info.Fields, false); fields(L.apiPayload, info.Payload, false)
+ for _, group in ipairs({ {'Functions', 'apiFunctions'}, {'Tables', 'apiTypes'}, {'Events', 'apiEvents'}, {'Callbacks', 'apiCallbacks'} }) do
+  if info[group[1]] and #info[group[1]] > 0 then
+   lines[#lines + 1] = ''; lines[#lines + 1] = color(L[group[2]], 'heading')
+   for _, child in ipairs(info[group[1]]) do
+    local target = self.byInfo and self.byInfo[child]
+    lines[#lines + 1] = reference(child.LiteralName or child.Name, target)
+   end
+  end
+ end
+ -- Preserve additional static metadata without traversing mixin methods or parent cycles.
+ local metadata = {}
+ local excluded = {Name=true,Type=true,Namespace=true,LiteralName=true,loweredName=true,loweredNamespaceName=true}
+ for key, value in pairs(info) do
+  if not excluded[key] and (type(value) == 'string' or type(value) == 'number' or type(value) == 'boolean')
+   and not (key:find('Secret') or key:find('Restrict') or key:find('Secure') or key:find('Protected')) then metadata[#metadata + 1] = key end
+ end
+ table.sort(metadata)
+ for _, key in ipairs(metadata) do lines[#lines + 1] = color(key, 'parameter') .. ': ' .. color(self:MetadataValue(info[key], key), 'literal') end
  local restrictions = self:RestrictionKeys(info)
  if #restrictions > 0 then
   lines[#lines + 1] = ''; lines[#lines + 1] = color(L.apiRestrictions, 'heading')
@@ -177,6 +264,17 @@ function A:FullDescription(name, rich)
  local text = table.concat(lines, '\n')
  if not rich then self.text[name] = text end
  return text
+end
+
+function A:Preview(name)
+ local text = self:FullDescription(name, true)
+ if not text then return end
+ local lines = {}
+ for line in (text .. '\n'):gmatch('(.-)\n') do
+  if #lines == 18 then lines[#lines + 1] = '…'; break end
+  lines[#lines + 1] = line
+ end
+ return table.concat(lines, '\n')
 end
 
 function A:Description(name)

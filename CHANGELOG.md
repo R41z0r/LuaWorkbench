@@ -4,6 +4,10 @@
 
 ### Added
 
+- Clear search text directly in the script list, code search, text snippets and Knowledge Base.
+
+- Browse documented functions, object methods, systems, structures, enums, events and callbacks in the Knowledge Base. Filter by alphabetically sorted categories, preview and follow type references, and return to previous entries.
+
 - API help includes documented default values and restriction/secret metadata for functions, arguments and returns.
 
 - Search documented Blizzard functions by name, description or parameter in the new Knowledge Base, with live results and a full detail view. F12 opens the matching API entry while local definitions retain priority. The movable window initially opens beside the editor when screen space permits. Colored signatures and types make entries easier to read, and a right-click action prepares function names for copying.
@@ -19,6 +23,8 @@
 - Knowledge Base search results no longer show redundant name tooltips.
 
 ### Fixed
+
+- Knowledge Base navigation buttons remain fully clickable, and opened entries start at the top of the detail view.
 
 - Code hover targets stay aligned with text across long scripts, wrapping and scrolling.
 

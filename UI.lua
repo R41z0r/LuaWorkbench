@@ -56,6 +56,23 @@ function UI:Tooltip(frame, text)
  frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
 
+function UI:SearchClear(box, refresh)
+ if box.clearButton then return box.clearButton end
+ local left, right, top, bottom = box:GetTextInsets()
+ box:SetTextInsets(left, math.max(right, 28), top, bottom)
+ local button = self:Button(box, 'close', addon.L.clearSearch, function()
+  box:SetText('')
+  if refresh then refresh() end
+  box:SetFocus()
+ end)
+ box.clearButton = button
+ button:SetSize(24, 24); button:SetPoint('RIGHT', -2, 0)
+ local function update() button:SetShown(box:GetText() ~= '') end
+ box:HookScript('OnTextChanged', update)
+ update()
+ return button
+end
+
 function UI:Button(parent, icon, tooltip, callback, color, borderHover)
  local button = CreateFrame("Button", nil, parent)
  button:SetSize(30, 28)
