@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Added
+
+- API help includes documented default values and restriction/secret metadata for functions, arguments and returns.
+
+- Search documented Blizzard functions by name, description or parameter in the new Knowledge Base, with live results and a full detail view. F12 opens the matching API entry while local definitions retain priority. The movable window initially opens beside the editor when screen space permits. Colored signatures and types make entries easier to read, and a right-click action prepares function names for copying.
+
+- Optional Blizzard API hover help with argument and return types, plus a configurable syntax color for documented global functions and namespace calls. Documentation loads when opening the editor outside combat.
+
+### Changed
+
+- Knowledge Base windows can be resized and remember their size; API help omits the redundant metadata explanation.
+
+- API help consistently displays boolean types and optional argument/default annotations, separately from nullable types.
+
+- Knowledge Base search results no longer show redundant name tooltips.
+
+### Fixed
+
+- Code hover targets stay aligned with text across long scripts, wrapping and scrolling.
+
+- API arguments with default values are marked optional even when they do not accept nil.
+
+- API hover help uses compact text-sized tooltips with colored signatures and wrapping for long type names.
+
 ## [1.0.0] - 2026-10-11
 
 ### Initial release

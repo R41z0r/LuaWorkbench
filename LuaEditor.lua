@@ -11,6 +11,7 @@ Editor.colors.localVariable = "ffd4d4d4"
 Editor.colors.globalVariable = "ff9cdcfe"
 Editor.colors.parameter = "ff9cdcfe"
 Editor.colors.functionName = "ffdcdcaa"
+Editor.colors.blizzardFunction = "ff4ec9b0"
 function Editor:Color(kind)
  local db = addon.Workspace and addon.Workspace.db
  local colors = db and db.options.syntaxColors
@@ -109,9 +110,10 @@ end
 function Editor:Render(source)
  local result, spans, offset = {}, {}, 0
  local tokens = addon.Analysis and addon.Analysis:Get(source).tokens or self:Tokenize(source)
+ local apiPaths = addon.APIHelp and addon.APIHelp:Paths(source) or {}
  for _, token in ipairs(tokens) do
   local text = token.text:gsub('|', '||')
-  local color = self:Color(token.semanticKind or token.kind)
+  local color = self:Color(apiPaths[token.start] and 'blizzardFunction' or token.semanticKind or token.kind)
   local rendered = color and ('|c' .. color .. text .. '|r') or text
   local first = offset + (color and 10 or 0) + 1
   spans[#spans + 1] = { first = first, last = first + #text - 1, source = token.start, text = token.text, kind = token.kind }
@@ -156,14 +158,24 @@ function Editor:HoverSourcePosition(input, x, y)
  local height, width = font:GetHeight(), font:GetWidth()
  local face, size, flags = font:GetFont()
  local spacing = font:GetSpacing()
+ local lines = font.GetNumLines and font:GetNumLines()
+ local textHeight = font:GetStringHeight()
+ local scale = font:GetEffectiveScale()
+ local advance = type(lines) == 'number' and lines > 0 and (textHeight + spacing) / lines
  if not cache or cache.spans ~= state.renderSpans or cache.height ~= height or cache.width ~= width
-  or cache.face ~= face or cache.size ~= size or cache.flags ~= flags or cache.spacing ~= spacing then
-  cache = { spans = state.renderSpans, height = height, width = width, face = face, size = size, flags = flags, spacing = spacing, entries = {} }
+  or cache.face ~= face or cache.size ~= size or cache.flags ~= flags or cache.spacing ~= spacing
+  or cache.lines ~= lines or cache.textHeight ~= textHeight or cache.scale ~= scale then
+  cache = { spans = state.renderSpans, height = height, width = width, face = face, size = size, flags = flags, spacing = spacing, lines = lines, textHeight = textHeight, scale = scale, entries = {} }
   for _, span in ipairs(state.renderSpans or {}) do
    if span.kind == 'identifier' or span.kind == 'call' then
     local areas = font:CalculateScreenAreaFromCharacterSpan(span.first, span.last)
     for _, area in ipairs(areas or {}) do
-     cache.entries[#cache.entries + 1] = { source = span.source, left = area.left, bottom = area.bottom, width = area.width, height = area.height }
+     -- Native selection rectangles can use a fractional row advance while the
+     -- rendered text uses a rounded one. Normalize against the measured text
+     -- height and visual line count (including wrapping), from the bottom up.
+     local ratio = advance and area.height > 0 and advance / area.height or 1
+     cache.entries[#cache.entries + 1] = { source = span.source, left = area.left,
+      bottom = area.bottom * ratio + (advance and height - textHeight or 0), width = area.width, height = area.height * ratio }
     end
    end
   end

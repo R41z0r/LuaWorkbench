@@ -56,3 +56,5 @@ DebugProbe.lua
 DebugCompiler.lua
 Debugger.lua
 DebugUI.lua
+APIHelp.lua
+KnowledgeBase.lua

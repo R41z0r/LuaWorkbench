@@ -163,6 +163,9 @@ function W:ShowOptions()
  end)
  toggle(L.secretDumpChat, 'secretDumpChat', false)
  section = 1
+ setting(L.apiHelp, function() return options.apiHelp ~= false and _G.ENABLE or _G.DISABLE end, function(_, refresh)
+  addon.APIHelp:SetEnabled(options.apiHelp == false); refresh()
+ end, function() return options.apiHelp ~= false end)
  setting(L.syntaxColors, function() return L.customize end, function() self:ShowSyntaxColors() end)
  toggle(L.runWithF5, 'runWithF5', true)
  toggle(L.autoPairs, 'autoPairs', true)
@@ -269,7 +272,7 @@ function W:ShowSyntaxColors()
  self.syntaxRows = {}
  local editor = addon.Query.Editor
  for _, item in ipairs({
-  { 'keyword', L.colorKeyword }, { 'call', L.colorCall }, { 'identifier', L.colorIdentifier },
+  { 'blizzardFunction', L.apiFunction }, { 'keyword', L.colorKeyword }, { 'call', L.colorCall }, { 'identifier', L.colorIdentifier },
   { 'string', L.colorString }, { 'number', L.colorNumber }, { 'literal', L.colorLiteral },
   { 'comment', L.colorComment }, { 'operator', L.colorOperator }, { 'punctuation', L.colorPunctuation },
   { 'localVariable', L.colorLocalVariable }, { 'globalVariable', L.colorGlobalVariable },

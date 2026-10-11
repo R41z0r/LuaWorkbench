@@ -95,7 +95,11 @@ function N:Go(target)
   cursor = target.cursor
  end
  local candidates = addon.Analysis:Resolve(source, cursor)
- if #candidates == 0 then Console:SetStatus(L.navigationNotFound, true); return end
+ if #candidates == 0 then
+  local apiName = addon.APIHelp and addon.APIHelp:AtCursor(source, cursor)
+  if apiName then addon.KnowledgeBase:Show(apiName); Console:SetStatus(nil); return end
+  Console:SetStatus(L.navigationNotFound, true); return
+ end
  if #candidates == 1 then self:Jump(candidates[1]); return end
  local entries = {}
  for _, candidate in ipairs(candidates) do

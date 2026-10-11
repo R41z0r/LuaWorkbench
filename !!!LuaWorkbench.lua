@@ -25,7 +25,7 @@ function Workspace:Initialize()
 end
 
 function Workspace:HidePanels(except)
- for _, panel in ipairs({ self.optionsFrame or false, self.syntaxFrame or false, self.helpFrame or false,
+ for _, panel in ipairs({ addon.KnowledgeBase and addon.KnowledgeBase.panel or false, self.optionsFrame or false, self.syntaxFrame or false, self.helpFrame or false,
   addon.Automation and addon.Automation.panel or false, addon.Diagnostics and addon.Diagnostics.panel or false,
   addon.Snippets and addon.Snippets.panel or false, addon.Navigation and addon.Navigation.snapshot or false,
  }) do if panel and panel ~= except then panel:Hide() end end
@@ -438,6 +438,7 @@ end
 function Workspace:Show(recover)
  if addon.Diagnostics then addon.Diagnostics:ResetPreview() end
  self:Initialize()
+ if addon.APIHelp then addon.APIHelp:Load() end
  if self.minibar then self.minibar:Hide() end
  self.minimized = nil
  if self.window then self.window:Show(); if recover ~= false then self:RecoverWindow() end; return end
@@ -480,7 +481,7 @@ function Workspace:Build()
   self:EndRename(false)
   if self.contextMenu then self.contextMenu:Hide() end
   if addon.Automation.panel then addon.Automation.panel:Hide() end
-  for _, panel in ipairs({ self.optionsFrame or false, self.helpFrame or false, self.syntaxFrame or false, addon.Diagnostics.panel or false, addon.Snippets and addon.Snippets.panel or false, addon.Navigation and addon.Navigation.snapshot or false }) do
+  for _, panel in ipairs({ addon.KnowledgeBase and addon.KnowledgeBase.panel or false, self.optionsFrame or false, self.helpFrame or false, self.syntaxFrame or false, addon.Diagnostics.panel or false, addon.Snippets and addon.Snippets.panel or false, addon.Navigation and addon.Navigation.snapshot or false }) do
    if panel then panel:Hide() end
   end
   self:Capture(); GameTooltip:Hide()
@@ -549,8 +550,10 @@ function Workspace:Build()
  scroll:SetPoint('TOPLEFT', 4, -91)
  self.snippetScroll = scroll; scroll:SetPoint('BOTTOMRIGHT', -15, 5)
  local library = UI:Action(sidebar, 'fragment', L.textSnippets, L.textSnippets, function() addon.Snippets:ShowLibrary() end)
- library:SetPoint('BOTTOMLEFT', 10, 8)
- scroll:SetPoint('BOTTOMRIGHT', -15, 44)
+ library:SetPoint('BOTTOMLEFT', 10, 40)
+ local knowledge = UI:Action(sidebar, 'search', L.knowledgeBase, L.knowledgeBase, function() addon.KnowledgeBase:Show() end)
+ knowledge:SetPoint('BOTTOMLEFT', 10, 8)
+ scroll:SetPoint('BOTTOMRIGHT', -15, 76)
  self.list = CreateFrame('Frame', nil, scroll); self.list:SetSize(200, 1); scroll:SetScrollChild(self.list)
  scroll:SetScript('OnSizeChanged', function(_, width) self.list:SetWidth(width) end)
  self.noResults = UI:Text(sidebar, L.noResults, 11); self.noResults:SetPoint('TOPLEFT', 10, -100); self.noResults:Hide()

@@ -223,7 +223,34 @@ function U:UpdateVariables()
  self.variableScroll:UpdateScrollChildRect()
 end
 
+function U:APITooltip(owner, text)
+ self:HideTooltip(nil, 'api-show')
+ if not self.apiTooltip then
+  local panel = CreateFrame('Frame', nil, UIParent)
+  self.apiTooltip = panel
+  panel:SetFrameStrata('TOOLTIP'); panel:SetClampedToScreen(true); panel:EnableMouse(false)
+  UI:Background(panel, UI.colors.background); UI:Border(panel, { 0.45, 0.5, 0.6, 1 })
+  panel.text = UI:Text(panel, '', 12)
+  panel.text:SetPoint('TOPLEFT', 8, -8)
+  panel.text:SetJustifyH('LEFT'); panel.text:SetJustifyV('TOP'); panel.text:SetNonSpaceWrap(true)
+  panel.text:SetSpacing(2)
+ end
+ local panel = self.apiTooltip
+ local label = panel.text
+ label:SetHeight(0); label:SetWidth(0); label:SetWordWrap(false); label:SetText(text or '')
+ local availableWidth = math.max(40, UIParent:GetWidth() - 32)
+ local width = math.min(420, availableWidth, math.max(220, label:GetStringWidth() + 16))
+ label:SetWordWrap(true); label:SetWidth(width - 16)
+ local height = math.min(label:GetStringHeight() + 16, math.max(32, UIParent:GetHeight() - 32))
+ label:SetHeight(height - 16); panel:SetSize(width, height)
+ local x, y = GetCursorPosition(); local scale = UIParent:GetEffectiveScale()
+ panel:ClearAllPoints(); panel:SetPoint('BOTTOMLEFT', UIParent, 'BOTTOMLEFT', x / scale + 16, y / scale + 20)
+ panel:Show()
+ self.tooltipOwner, self.tooltipVisible, self.tooltipAPI = owner, true, true
+end
+
 function U:ValueTooltip(owner, text, hidden, value, secretLabel)
+ if self.apiTooltip then self.apiTooltip:Hide() end
  if not self.valueTooltip then
   local tooltip = CreateFrame('GameTooltip', 'LuaWorkbenchDebugValueTooltip', UIParent, 'GameTooltipTemplate')
   self.valueTooltip = tooltip
@@ -232,6 +259,7 @@ function U:ValueTooltip(owner, text, hidden, value, secretLabel)
   tooltip:HookScript('OnHide', function() self:TraceHover('tooltip-hide') end)
  end
  local tooltip = self.valueTooltip
+ self.tooltipAPI = nil
  self:TraceHover('show-request', owner == C.input.editBox, hidden == true)
  self.tooltipOwner = owner
  if owner ~= C.input.editBox then self.hoverPath, self.hoverToken = nil, nil end
@@ -249,7 +277,8 @@ end
 function U:HideTooltip(owner, reason)
  if owner and self.tooltipOwner ~= owner then return end
  if self.valueTooltip and self.valueTooltip:IsShown() then self:TraceHover(reason or 'hide-unspecified'); self.valueTooltip:Hide() end
- self.tooltipVisible, self.tooltipOwner, self.hoverPath, self.hoverToken = nil, nil, nil, nil
+ if self.apiTooltip then self.apiTooltip:Hide() end
+ self.tooltipVisible, self.tooltipOwner, self.hoverPath, self.hoverToken, self.tooltipAPI = nil, nil, nil, nil, nil
 end
 
 function U:Layout()
@@ -283,7 +312,7 @@ function U:Refresh()
  self.buttons[6]:SetEnabled(D.paused == true)
  self.terminalInput:SetEnabled(D.paused == true)
  self:UpdateVariables(); self:Layout(); self:UpdateMinibar(); C:UpdateLineNumbers()
- if not D.paused then self:HideTooltip(nil, 'not-paused'); if self.snapshot then self.snapshot:Hide() end end
+ if not D.paused then if not self.tooltipAPI then self:HideTooltip(nil, 'not-paused') end; if self.snapshot then self.snapshot:Hide() end end
  if D.paused and self.pauseToken ~= D.evalToken then
   self.pauseToken = D.evalToken
   if W.window:IsShown() and not W.minimized then self:ShowLocation(false) end
@@ -496,7 +525,11 @@ function U:HoverUpdate(elapsed, target, record)
  local matches = record and (target or record.id == W.current) and record.source == source
  -- A scroll child's geometric bounds may extend behind the inspector.
  if self.tooltipOwner and self.tooltipOwner ~= input.editBox and self.tooltipOwner:IsMouseOver() then self:TraceHover('other-owner'); return end
- if not D.paused or not matches or not input.editBox:IsMouseOver() or not input.scrollFrame:IsMouseOver() then
+ local knowledge = addon.KnowledgeBase and addon.KnowledgeBase.panel
+ if knowledge and knowledge:IsShown() and knowledge:IsMouseOver() then self:HideTooltip(input.editBox, 'knowledge-base'); return end
+ local debugHover = D.paused and matches
+ local apiHover = addon.APIHelp and addon.APIHelp:Enabled() and addon.APIHelp.ready
+ if (not debugHover and not apiHover) or not input.editBox:IsMouseOver() or not input.scrollFrame:IsMouseOver() then
   self:TraceHover('gate', D.paused == true, matches ~= nil and matches ~= false, input.editBox:IsMouseOver(), input.scrollFrame:IsMouseOver())
   self:HideTooltip(input.editBox, 'code-gate')
   return
@@ -521,16 +554,25 @@ function U:HoverUpdate(elapsed, target, record)
  local x, y = GetCursorPosition(); local scale = font:GetEffectiveScale()
  local sourcePosition = addon.Query.Editor:HoverSourcePosition(input, x / scale, y / scale)
  local path = sourcePosition and self:HoverPath(source, sourcePosition)
+ local apiName = apiHover and sourcePosition and addon.APIHelp:Paths(source)[sourcePosition]
  if self.hoverTrace then
   self:TraceHover('glyph-hit', sourcePosition, sourcePosition and C:GetLinePosition(source, sourcePosition - 1), x / scale, y / scale)
  end
- if not path then self:HideTooltip(input.editBox, 'code-no-token'); return end
- if self.hoverPath == path and self.hoverToken == D.evalToken and self.tooltipOwner == input.editBox and self.valueTooltip and self.valueTooltip:IsShown() then return end
- local value, found = D:ResolveVariable(path)
+ if not path and not apiName then self:HideTooltip(input.editBox, 'code-no-token'); return end
+ local hoverKey = tostring(sourcePosition) .. ":" .. (apiName or path or "")
+ local visibleTooltip = self.tooltipAPI and self.apiTooltip or self.valueTooltip
+ if self.hoverPath == hoverKey and self.hoverToken == D.evalToken and self.tooltipOwner == input.editBox and visibleTooltip and visibleTooltip:IsShown() then return end
+ local value, found
+ if debugHover and path then value, found = D:ResolveVariable(path) end
  self:TraceHover('resolve', found == true)
+ if apiName and (not found or (not (_G.issecretvalue and _G.issecretvalue(value)) and type(value) == 'function')) then
+  self:APITooltip(input.editBox, addon.APIHelp:FullDescription(apiName, true))
+  self.hoverPath, self.hoverToken = hoverKey, D.evalToken
+  return
+ end
  if not found then self:HideTooltip(input.editBox, 'code-unresolved'); return end
  local hidden = _G.issecretvalue and _G.issecretvalue(value)
  local name = path:gsub('|', '||')
  self:ValueTooltip(input.editBox, name .. ' = ' .. D:FormatPreview(value):gsub('|', '||'), hidden and (type(value) == 'string' or type(value) == 'number'), value, name .. ' = |cff88ff88<secret>|r')
- self.hoverPath, self.hoverToken = path, D.evalToken
+ self.hoverPath, self.hoverToken = hoverKey, D.evalToken
 end
