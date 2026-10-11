@@ -378,6 +378,10 @@ function Editor:Attach(input)
    state.busy, state.keyEdit, state.formatEdit = nil, nil, nil
    return
   end
+  if user and addon.EditorActions then
+   local normalized, cursor = addon.EditorActions:Text(input, text)
+   if normalized then state.busy = true; frame:SetText(normalized); frame:SetCursorPosition(cursor); state.busy = nil; text = normalized end
+  end
   if user and state.keyEdit and state.keyEdit.enter and addon.Workspace.db.options.autoIndent ~= false then
    state.keyEdit.enter = nil
    local indented, cursor = self:NewlineIndent(state.source, text, frame:GetCursorPosition())

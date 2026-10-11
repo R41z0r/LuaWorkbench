@@ -33,6 +33,11 @@ function A:Move(source, cursor, direction, selectionStart, selectionEnd)
  return source:sub(1,first) .. below .. '\n' .. line .. (nextNewline and '\n' or '') .. source:sub(nextEnd+1), first+#below+1+column
 end
 
+function A:Selection(input)
+ local state = input.queryEditor
+ return state.selectionUnknown or (state.selectionStart and state.selectionEnd and state.selectionStart ~= state.selectionEnd)
+end
+
 function A:Cursor(input)
  local state, box = input.queryEditor, input.editBox
  if state.busy then return end
@@ -46,7 +51,7 @@ function A:Cursor(input)
   state.selectionStart = state.selectionStart or state.actionCursor or cursor
   state.selectionEnd = cursor
 
- elseif not ((_G.IsControlKeyDown and IsControlKeyDown()) or (_G.IsMetaKeyDown and _G.IsMetaKeyDown())) then state.selectionStart, state.selectionEnd, state.selectionUnknown = nil, nil, nil end
+ elseif not state.clipboard and not ((_G.IsControlKeyDown and IsControlKeyDown()) or (_G.IsMetaKeyDown and _G.IsMetaKeyDown())) then state.selectionStart, state.selectionEnd, state.selectionUnknown = nil, nil, nil end
  state.actionCursor = cursor
 end
 
@@ -70,10 +75,51 @@ function A:Key(input, key)
   end
   return true
  end
- if ctrl and key == 'A' then state.selectionStart, state.selectionEnd = 0, #source end
+ local meta = _G.IsMetaKeyDown and _G.IsMetaKeyDown()
+ local nativeModifier = meta or (ctrl and not (_G.IsMacClient and _G.IsMacClient()))
+ if not nativeModifier or alt then return end
+ if key=='A' then state.selectionStart, state.selectionEnd=0,#source; return end
+ if key=='X' then
+  self.lineClipboard = nil
+  if self:Selection(input) or (key=='X' and E:IsReadOnly(input)) then return end
+  local first,last = self:Bounds(source,cursor)
+  local text = source:sub(first+1,last)
+  if text=='' then
+   if key=='X' and first>0 and source:sub(-1)=='\n' then
+    -- Select the preceding line break for native cut, including clipboard transfer.
+    self.lineClipboard = '\n'
+    state.clipboard = {key=key, source=source, cursor=cursor, first=first-1,last=first}
+    box:HighlightText(first-1,first)
+   end
+   return
+  end
+  self.lineClipboard = text
+  state.clipboard = {key=key, source=source, cursor=cursor, first=first,last=last}
+  box:HighlightText(first,last)
+
+ end
 end
 
-function A:KeyUp(input) input.queryEditor.actionLock = nil end
+function A:Text(input, text)
+ local state = input.queryEditor
+ local clip=state.clipboard
+ if clip and clip.key=='X' and clip.first>0 and clip.last==#clip.source and clip.source:sub(-1)~='\n'
+  and text==clip.source:sub(1,clip.first) then return text:sub(1,-2), math.max(0,clip.first-1) end
+end
+
+function A:KeyUp(input)
+ local state, box = input.queryEditor, input.editBox
+ local clip=state.clipboard
+ state.clipboard, state.paste, state.actionLock = nil,nil,nil
+ if clip and clip.key=='X' and input:GetText()~=clip.source then
+  -- Native cut consumed the prepared selection; it is no longer a user selection.
+  box:HighlightText(0,0)
+ end
+ if clip and input:GetText()~=clip.source then
+  state.selectionStart, state.selectionEnd, state.selectionUnknown = nil, nil, nil
+  state.actionCursor = box:GetCursorPosition()
+ end
+end
 
 function A:Track(input)
  local box,state=input.editBox,input.queryEditor

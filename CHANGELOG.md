@@ -4,6 +4,8 @@
 
 ### Added
 
+- Cut the current line with the native clipboard shortcut when no text is selected, including repeated cuts and empty final lines.
+
 - Platform-aware editor shortcuts and help: Command on macOS for saving, searching and running scripts; Option for line actions and formatting.
 
 - Move the current line or selected line blocks with Alt+Up/Down.
