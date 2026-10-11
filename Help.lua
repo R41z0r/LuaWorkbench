@@ -103,7 +103,7 @@ function W:ShowHelp()
   { 'Ctrl+F', L.findCode },
   { 'Ctrl+Shift+F', L.searchSnippets },
   { 'Enter / Shift+Enter', L.nextMatch .. ' / ' .. L.previousMatch },
- }) do text(entry[2], 12, entry[1]) end
+ }) do text(entry[2], 12, addon.ShortcutText(entry[1])) end
  section = 2
  text(L.helpEditing, 12)
  text(L.snippets .. ' / ' .. L.save .. ' / ' .. L.saveAll, 15)

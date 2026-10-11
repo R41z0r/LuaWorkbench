@@ -3,6 +3,11 @@ local UI = {}
 addon.UI = UI
 UI.colors = { background = { 0.055, 0.065, 0.085, 1 }, panel = { 0.085, 0.095, 0.12, 1 }, hover = { 0.16, 0.19, 0.24, 1 }, accent = { 0.22, 0.56, 0.96, 1 } }
 
+function UI:PrimaryModifier()
+ if _G.IsMacClient and _G.IsMacClient() then return _G.IsMetaKeyDown and _G.IsMetaKeyDown() or false end
+ return _G.IsControlKeyDown and _G.IsControlKeyDown() or false
+end
+
 function UI:InCombat()
  return _G.InCombatLockdown and _G.InCombatLockdown() or false
 end

@@ -260,7 +260,7 @@ end
 function A:BuildControls(parent)
  self.gear = UI:Button(parent, 'options', L.scriptSettings, function() self:Toggle(self.gear) end)
  self.gear:SetPoint('TOPLEFT', 6, -2)
- W.saveCurrentButton = UI:Button(parent, 'save', L.save .. '  (Ctrl+S)', function() W:Save() end)
+ W.saveCurrentButton = UI:Button(parent, 'save', L.save .. addon.ShortcutText('  (Ctrl+S)'), function() W:Save() end)
  W.saveCurrentButton:SetPoint('LEFT', self.gear, 'RIGHT', 2, 0)
  self.name = UI:Text(parent, '', 12)
  self.name:SetPoint('TOPLEFT', 80, -10); self.name:SetPoint('TOPRIGHT', -178, -10)

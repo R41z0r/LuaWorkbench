@@ -74,7 +74,7 @@ function S:OpenCodeMenu(input)
   addon.Query.Console:SetStatus(L.textSnippetTargetChanged, true)
  end
  local entries = {
-  { text = L.queryLuaFormat .. ' (Shift+Alt+F)', action = function() if valid() then addon.Query.Editor:FormatInput(input) end end },
+  { text = L.queryLuaFormat .. addon.ShortcutText(' (Shift+Alt+F)'), action = function() if valid() then addon.Query.Editor:FormatInput(input) end end },
   { text = L.textSnippetInsert, action = function()
    local items = {}
    for _, item in ipairs(self:Entries()) do
@@ -96,7 +96,7 @@ function S:OpenCodeMenu(input)
  }
  if input == addon.Query.Console.input then
   entries[#entries + 1] = { text = L.goToDefinition .. ' (F12)', action = function() addon.Navigation:Go(target) end }
-  if addon.Navigation:CanBack() then entries[#entries + 1] = { text = L.navigationBack .. ' (Alt+Left)', action = function() addon.Navigation:Back() end } end
+  if addon.Navigation:CanBack() then entries[#entries + 1] = { text = L.navigationBack .. addon.ShortcutText(' (Alt+Left)'), action = function() addon.Navigation:Back() end } end
  end
  open(entries)
 end

@@ -4,6 +4,8 @@
 
 ### Added
 
+- Platform-aware editor shortcuts and help: Command on macOS for saving, searching and running scripts; Option for line actions and formatting.
+
 - Move the current line or selected line blocks with Alt+Up/Down.
 
 ## [1.1.0] - 2026-10-11

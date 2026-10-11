@@ -328,7 +328,7 @@ end
 
 function Workspace:Shortcut(key)
  if self:RunShortcut(key) then return end
- if not IsControlKeyDown() then return end
+ if not UI:PrimaryModifier() then return end
  if key == 'F' then
   if IsShiftKeyDown() then
    self.codeOnly = false; self:Layout(); self.snippetSearch:SetFocus(); self.snippetSearch:HighlightText()
@@ -536,7 +536,7 @@ function Workspace:Build()
  delete:SetPoint('TOPRIGHT', -3, -2)
  self.snippetSearch = field(sidebar, 200); self.snippetSearch:SetPoint('TOPLEFT', 10, -34)
  self.snippetSearch:SetText('')
- UI:Tooltip(self.snippetSearch, L.searchSnippets .. '  (Ctrl+Shift+F)')
+ UI:Tooltip(self.snippetSearch, L.searchSnippets .. addon.ShortcutText('  (Ctrl+Shift+F)'))
  self.snippetSearch:SetScript('OnTextChanged', function() self:RefreshTree() end)
  UI:SearchClear(self.snippetSearch)
  self.snippetSearch:SetScript('OnEnterPressed', function()
@@ -615,11 +615,11 @@ function Workspace:Build()
  self.undoOutput:Hide()
  local maximize = UI:Button(input.frame, 'expand', L.maximizeCode, function() self.codeOnly = not self.codeOnly; self:Layout() end)
  maximize:SetPoint('TOPRIGHT', -6, -2)
- local search = UI:Button(input.frame, 'search', L.findCode .. '  (Ctrl+F)', function() self:OpenFind() end)
+ local search = UI:Button(input.frame, 'search', L.findCode .. addon.ShortcutText('  (Ctrl+F)'), function() self:OpenFind() end)
  search:SetPoint('RIGHT', maximize, 'LEFT', -2, 0)
- local format = UI:Button(input.frame, '{}', L.queryLuaFormat .. ' (Shift+Alt+F)', function() addon.Query.Editor:FormatInput(input) end)
+ local format = UI:Button(input.frame, '{}', L.queryLuaFormat .. addon.ShortcutText(' (Shift+Alt+F)'), function() addon.Query.Editor:FormatInput(input) end)
  format:SetPoint('RIGHT', search, 'LEFT', -2, 0)
- local play = UI:Button(input.frame, 'play', L.queryLuaRun .. '  (Ctrl+Enter)', function() self:Run() end, { 0.4, 0.88, 0.58, 1 })
+ local play = UI:Button(input.frame, 'play', L.queryLuaRun .. addon.ShortcutText('  (Ctrl+Enter)'), function() self:Run() end, { 0.4, 0.88, 0.58, 1 })
  play:SetPoint('RIGHT', format, 'LEFT', -2, 0)
  self.runButton = play
  input.label:SetPoint('TOPRIGHT', input.frame, 'TOP', -10, -34)

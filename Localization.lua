@@ -3158,4 +3158,16 @@ local translations = {
 		["windowClamp"] = "將視窗限制在螢幕內（Clamp）",
 	},
 }
-addon.L = translations[GetLocale()] or translations.enUS
+-- Keep platform labels consistent across every locale and UI entry point.
+function addon.ShortcutText(text)
+ if not (_G.IsMacClient and _G.IsMacClient()) then return text end
+ for _, modifier in ipairs({ 'Ctrl', 'Strg' }) do
+  for _, key in ipairs({ 'Shift+F', 'Umschalt+F', 'Mayús+F', 'Maj+F', 'Maiusc+F', 'Enter', 'Entrée', 'Invio', 'S', 'F', 'C', 'X', 'V' }) do
+   local pattern = modifier .. '%+' .. key:gsub('%+', '%%+') .. '%f[^%a]'
+   text = text:gsub(pattern, 'Cmd+' .. key)
+  end
+ end
+ return (text:gsub('%f[%a]Alt%f[^%a]', 'Option'))
+end
+addon.L = {}
+for key, value in pairs(translations[GetLocale()] or translations.enUS) do addon.L[key] = addon.ShortcutText(value) end
