@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Move the current line or selected line blocks with Alt+Up/Down.
+
 ## [1.1.0] - 2026-10-11
 
 ### Added

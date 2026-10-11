@@ -299,6 +299,7 @@ function Editor:SetSource(input, source, cursor)
  if self:IsReadOnly(input) and not (addon.Workspace and addon.Workspace.selecting) then return false end
  local state = input.queryEditor
  if not state then return end
+ state.selectionStart, state.selectionEnd, state.selectionUnknown = nil, nil, nil
  state.busy = true
  input.editBox:SetText(source)
  input.editBox:SetCursorPosition(math.min(cursor or #source, #source))
@@ -394,6 +395,7 @@ function Editor:Attach(input)
  state.changed = state.scripts[#state.scripts].original
  wrap('OnKeyDown', function(original, frame, key)
   state.formatEdit = nil
+  if addon.EditorActions and addon.EditorActions:Key(input, key) then state.keyEdit = nil; return end
   if key == 'F' and frame:HasFocus() and not self:IsReadOnly(input) and _G.IsShiftKeyDown and _G.IsShiftKeyDown()
    and _G.IsAltKeyDown and _G.IsAltKeyDown() and not (_G.IsControlKeyDown and _G.IsControlKeyDown())
    and not (_G.IsMetaKeyDown and _G.IsMetaKeyDown()) then
@@ -415,6 +417,7 @@ function Editor:Attach(input)
   end
  end)
  wrap('OnKeyUp', function(original, ...)
+  if addon.EditorActions then addon.EditorActions:KeyUp(input) end
   state.formatEdit = nil
   if original then original(...) end
   state.keyEdit = nil
@@ -424,6 +427,10 @@ function Editor:Attach(input)
   if state.boxWidth ~= width then state.boxWidth = width; state.pending = true end
  end)
  wrap('OnCursorChanged', function(original, frame, x, y, width, height)
+  if state.actionLock and not state.busy and frame:GetCursorPosition() ~= state.actionLock then
+   state.busy = true; frame:SetCursorPosition(state.actionLock); state.busy = nil; return
+  end
+  if addon.EditorActions then addon.EditorActions:Cursor(input) end
   if not state.busy and frame:GetText() == state.source then state.lastCursor = frame:GetCursorPosition() end
   if original then original(frame, x, y, width, height) end
   state.caret:ClearAllPoints()
@@ -491,6 +498,30 @@ function Editor:Attach(input)
   local nextChar = source:sub(cursor + 1, cursor + 1)
   if nextChar ~= '' and not nextChar:match('[%s%)%]%},;]') then return end
   self:SetSource(input, source:sub(1, cursor) .. closing .. source:sub(cursor + 1), cursor)
+ end)
+ if addon.EditorActions then addon.EditorActions:Track(input) end
+ wrap('OnMouseDown', function(original, frame, button)
+  if button == 'LeftButton' then
+   local now = _G.GetTime and _G.GetTime() or 0
+   state.doubleClick = state.lastMouseDown and now - state.lastMouseDown < 0.35
+   state.lastMouseDown = now
+   state.mouseX, state.mouseY = GetCursorPosition()
+   state.mouseAnchor = (_G.IsShiftKeyDown and IsShiftKeyDown()) and (state.selectionStart or state.actionCursor) or frame:GetCursorPosition()
+   state.mouseSelecting = true
+  end
+  if original then original(frame, button) end
+ end)
+ wrap('OnMouseUp', function(original, frame, button)
+  if button == 'LeftButton' then
+   local x, y = GetCursorPosition()
+   state.mouseSelecting = nil
+   local dragged = state.mouseX and (math.abs(x-state.mouseX)>3 or math.abs(y-state.mouseY)>3)
+   state.selectionUnknown = state.doubleClick or false
+   if dragged or (_G.IsShiftKeyDown and IsShiftKeyDown()) then
+    state.selectionStart, state.selectionEnd = state.mouseAnchor, frame:GetCursorPosition()
+   elseif not state.selectionUnknown then state.selectionStart, state.selectionEnd = nil, nil end
+  end
+  if original then original(frame, button) end
  end)
  self:Paint(input)
 end
