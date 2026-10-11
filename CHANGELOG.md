@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-11
+
 ### Added
 
 - Explore Blizzard API documentation in a searchable Knowledge Base, including functions, methods, objects, structures, enums, events and callbacks. Filter by category, follow type references and return with Back.
