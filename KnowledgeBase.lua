@@ -4,12 +4,56 @@ addon.KnowledgeBase = K
 local UI, L, A = addon.UI, addon.L, addon.APIHelp
 
 function K:BuildIndex()
- if self.entries or not A.ready then return end
+ if self.entries then self:ScheduleIndex(); return end
+ if not A.ready then return end
+ local catalog, names = A.catalog or A.index, {}
+ for name in pairs(catalog) do names[#names + 1] = name end
+ table.sort(names)
  self.entries = {}
- for name, entry in pairs(A.catalog or A.index) do
-  self.entries[#self.entries + 1] = { name = name, kind = entry.kind or 'apiFunctions', lower = name:lower(), body = A:FullDescription(name):lower() }
+ for _, name in ipairs(names) do
+  local entry = catalog[name]
+  self.entries[#self.entries + 1] = { name = name, kind = entry.kind or 'apiFunctions', lower = name:lower() }
  end
- table.sort(self.entries, function(a, b) return a.name < b.name end)
+ if self.panel then
+  self.indexing, self.nextIndex = true, 1
+  self:ScheduleIndex()
+ else
+  for _, entry in ipairs(self.entries) do entry.body = A:SearchText(entry.name) end
+ end
+end
+
+function K:IndexStatus()
+ if self.indexing and self.panel then
+  self.panel.status:SetText(string.format(L.apiIndexing, self.nextIndex - 1, #self.entries))
+ end
+end
+
+function K:ScheduleIndex()
+ if not self.indexing or self.indexTimer or not self.panel or not self.panel:IsShown() then return end
+ local entries = self.entries
+ self.indexTimer = entries
+ C_Timer.After(0, function()
+  if self.indexTimer ~= entries then return end
+  self.indexTimer = nil
+  if self.entries ~= entries or not self.panel:IsShown() then return end
+  local clock = _G.debugprofilestop
+  local started = clock and clock()
+  -- Yield between batches; also bound work on clients without a profiling clock.
+  for _ = 1, 100 do
+   local entry = entries[self.nextIndex]
+   if not entry then break end
+   entry.body = A:SearchText(entry.name)
+   self.nextIndex = self.nextIndex + 1
+   if started and clock() - started >= 2 then break end
+  end
+  if self.nextIndex > #entries then
+   self.indexing = nil
+   -- A pending user query owns the next refresh. Otherwise retain navigation.
+   if not self.panel.delay then self:Search(true) end
+  else
+   self:IndexStatus(); self:ScheduleIndex()
+  end
+ end)
 end
 
 function K:Find(query)
@@ -17,18 +61,29 @@ function K:Find(query)
  query = query:lower():match('^%s*(.-)%s*$')
  local compact, words = query:gsub('%s+', ''), {}
  for word in query:gmatch('%S+') do words[#words + 1] = word end
- local matches = {}
+ -- Entries are already alphabetic. Stable score buckets avoid sorting and
+ -- allocating a new result record for every match on every keystroke.
+ local buckets = { {}, {}, {}, {} }
  for _, entry in ipairs(self.entries or {}) do
-  local nameMatch = entry.lower:find(compact, 1, true)
-  local found = true
-  if not nameMatch then
-   for _, word in ipairs(words) do if not entry.body:find(word, 1, true) then found = false; break end end
-  end
-  if found and (not self.category or entry.kind == self.category) then
-   matches[#matches + 1] = { name = entry.name, score = entry.lower == compact and 0 or (nameMatch == 1 and 1 or (nameMatch and 2 or 3)) }
+  if not self.category or entry.kind == self.category then
+   local nameMatch = entry.lower:find(compact, 1, true)
+   local found = true
+   if not nameMatch then
+    found = not self.indexing and entry.body ~= nil
+    if found then
+     for _, word in ipairs(words) do if not entry.body:find(word, 1, true) then found = false; break end end
+    end
+   end
+   if found then
+    local rank = entry.lower == compact and 1 or (nameMatch == 1 and 2 or (nameMatch and 3 or 4))
+    local bucket = buckets[rank]; bucket[#bucket + 1] = entry
+   end
   end
  end
- table.sort(matches, function(a, b) if a.score ~= b.score then return a.score < b.score end; return a.name < b.name end)
+ local matches = {}
+ for _, bucket in ipairs(buckets) do
+  for _, entry in ipairs(bucket) do matches[#matches + 1] = entry end
+ end
  return matches
 end
 
@@ -89,11 +144,12 @@ function K:LayoutDetail()
  panel.detailScroll:UpdateScrollChildRect()
 end
 
-function K:Search()
+function K:Search(preserve)
  local panel = self.panel
  if not panel then return end
  panel.delay = nil
- self.history = {}; if panel.back then panel.back:Hide() end
+ if not preserve then self.history = {}; if panel.back then panel.back:Hide() end end
+ local listOffset = preserve and panel.list:GetVerticalScroll() or 0
  local matches = self:Find(panel.search:GetText())
  local shown = math.min(#matches, 100)
  panel.status:SetText(not A.ready and (A.pending and L.apiPending or L.apiUnavailable) or string.format(L.apiResults, #matches, shown))
@@ -117,8 +173,10 @@ function K:Search()
   row.text:SetText(row.name); row.selected:SetShown(row.name == panel.selected); row:Show()
  end
  for index = shown + 1, #panel.rows do panel.rows[index]:Hide() end
- panel.content:SetHeight(math.max(1, shown * 28)); panel.list:SetVerticalScroll(0); panel.list.bar:SetValue(0)
+ panel.content:SetHeight(math.max(1, shown * 28)); panel.list:SetVerticalScroll(listOffset); panel.list.bar:SetValue(listOffset)
  panel.list:UpdateScrollChildRect()
+ self:IndexStatus()
+ if preserve and panel.selected then return end
  if shown > 0 then self:Select(matches[1].name)
  else panel.selected = nil; panel.detail:SetText(A.ready and L.noResults or panel.status:GetText()); self:LayoutDetail() end
 end

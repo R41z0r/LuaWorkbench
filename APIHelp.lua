@@ -266,6 +266,46 @@ function A:FullDescription(name, rich, links)
  return text
 end
 
+-- Search only needs static words, not a fully formatted article for every entry.
+-- Do not traverse documentation parent links or injected mixin methods.
+function A:SearchText(name)
+ local entry = self.catalog and self.catalog[name]
+ local info = entry and entry.info or self.index[name]
+ if not info then return '' end
+ local words = { name, entry and L[entry.kind] or L.apiFunction }
+ local function collect(value)
+  if value.Name then words[#words + 1] = value.Name .. ':' end
+  if value.Type then words[#words + 1] = value.Type == 'bool' and 'boolean' or value.Type end
+  for _, line in ipairs(value.Documentation or {}) do words[#words + 1] = line end
+  for key, item in pairs(value) do
+   if key ~= 'Name' and key ~= 'Type' and key ~= 'Nilable' and key ~= 'loweredName' and key ~= 'loweredNamespaceName'
+    and (type(item) == 'string' or type(item) == 'number' or type(item) == 'boolean') then
+    words[#words + 1] = key .. ': ' .. tostring(item)
+   elseif type(item) == 'table' and (key:find('Secret') or key:find('Restrict')) then
+    words[#words + 1] = key .. ': ' .. self:MetadataValue(item, key)
+   end
+  end
+  if value.Nilable then words[#words + 1] = 'nil' end
+  if value.Default ~= nil then words[#words + 1] = L.apiDefault end
+ end
+ collect(info)
+ if info.System then words[#words + 1] = info.System.Namespace or info.System.Name or '' end
+ for _, group in ipairs({ {'Arguments', L.apiArguments}, {'Returns', L.apiReturns}, {'Fields', L.apiFields}, {'Payload', L.apiPayload} }) do
+  local fields = info[group[1]]
+  if fields and #fields > 0 then
+   words[#words + 1] = group[2]
+   for _, field in ipairs(fields) do
+    collect(field)
+    if group[1] == 'Arguments' and (field.Nilable or field.Default ~= nil) then words[#words + 1] = L.apiOptional end
+   end
+  end
+ end
+ for _, group in ipairs({ 'Functions', 'Tables', 'Events', 'Callbacks' }) do
+  for _, child in ipairs(info[group] or {}) do words[#words + 1] = child.LiteralName or child.Name end
+ end
+ return table.concat(words, ' '):lower()
+end
+
 function A:Preview(name)
  local text = self:FullDescription(name, true)
  if not text then return end

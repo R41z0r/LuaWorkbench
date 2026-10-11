@@ -16,6 +16,8 @@
 
 ### Changed
 
+- Knowledge Base full-text indexing runs in small background steps with progress feedback; name search remains available while it builds.
+
 - Knowledge Base windows can be resized and remember their size; API help omits the redundant metadata explanation.
 
 - API help consistently displays boolean types and optional argument/default annotations, separately from nullable types.
@@ -23,6 +25,8 @@
 - Knowledge Base search results no longer show redundant name tooltips.
 
 ### Fixed
+
+- Knowledge Base opening and live searches avoid unnecessary article formatting and repeated result sorting.
 
 - Knowledge Base navigation buttons remain fully clickable, and opened entries start at the top of the detail view.
 
