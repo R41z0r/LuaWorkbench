@@ -1,0 +1,58 @@
+## Interface: 16001, 20506, 120100, 120105
+## Title: !!!LuaWorkbench
+## Notes: Lua editor with saved snippets, search and debugging tools.
+## Notes-deDE: Lua-Editor mit gespeicherten Snippets, Suche und Debugging-Werkzeugen.
+## Notes-esES: Editor Lua con fragmentos guardados, búsqueda y herramientas de depuración.
+## Notes-esMX: Editor Lua con fragmentos guardados, búsqueda y herramientas de depuración.
+## Notes-frFR: Éditeur Lua avec extraits enregistrés, recherche et outils de débogage.
+## Notes-itIT: Editor Lua con frammenti salvati, ricerca e strumenti di debug.
+## Notes-koKR: 저장된 스니펫, 검색 및 디버깅 도구를 갖춘 Lua 편집기.
+## Notes-ptBR: Editor Lua com trechos salvos, pesquisa e ferramentas de depuração.
+## Notes-ruRU: Редактор Lua с сохранёнными фрагментами, поиском и инструментами отладки.
+## Notes-zhCN: 提供代码片段保存、搜索和调试工具的 Lua 编辑器。
+## Notes-zhTW: 提供程式碼片段儲存、搜尋和除錯工具的 Lua 編輯器。
+## Category: Development Tools
+## Category-deDE: Entwicklungstools
+## Category-esES: Herramientas de Desarrollo
+## Category-esMX: Herramientas de Desarrollo
+## Category-frFR: Outils de Développement
+## Category-itIT: Strumenti di sviluppo
+## Category-koKR: 개발 도구
+## Category-ptBR: Ferramentas de Desenvolvimento
+## Category-ruRU: Инструменты разработки
+## Category-zhCN: 开发工具
+## Category-zhTW: 開發工具
+## X-Category: Development Tools
+## IconTexture: Interface\AddOns\!!!LuaWorkbench\Assets\Icon.tga
+## X-License: MIT
+## Author: LuaWorkbench contributors
+## Version: @project-version@
+## SavedVariables: LuaWorkbenchDB
+## X-Wago-ID: EGPaBWN1
+## X-Curse-Project-ID: 1736834
+## X-WoWI-ID: 27254
+
+libs\LibStub\LibStub.lua
+libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+Localization.lua
+LuaEditor.lua
+Analysis.lua
+LuaConsole.lua
+UI.lua
+Search.lua
+!!!LuaWorkbench.lua
+Organization.lua
+Snippets.lua
+Options.lua
+Help.lua
+Helpers.lua
+Automation.lua
+Diagnostics.lua
+Navigation.lua
+OutputWindow.lua
+DebugProbe.lua
+DebugCompiler.lua
+Debugger.lua
+DebugUI.lua

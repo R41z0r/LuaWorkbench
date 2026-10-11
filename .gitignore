@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+.DS_Store
+/build.sh
+/.release/
+/.release-notes/
+/.bigwigs-packager/
+/.env
+/.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+/WTF/
+/SavedVariables/
+/.local/
+
+# Generated release notes and local project notes.
+/PACKAGE_CHANGELOG.md
+/*.local.md
+
+# Local test harnesses.
+/scripts/tests*/

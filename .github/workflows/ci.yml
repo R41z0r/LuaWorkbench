@@ -1,0 +1,24 @@
+name: Validate
+on:
+  push:
+    branches: ['**']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1 luarocks
+          sudo luarocks install luacheck
+      - name: Validate source and packaging
+        run: |
+          find . -name '*.lua' -not -path './.git/*' -exec luac5.1 -p {} +
+          luacheck --no-color -q .
+          python3 scripts/check_lua_upvalues.py .
+          python3 scripts/validate_project.py
+          git diff --check

@@ -1,0 +1,32 @@
+package-as: '!!!LuaWorkbench'
+enable-nolib-creation: no
+manual-changelog:
+  filename: PACKAGE_CHANGELOG.md
+  markup-type: markdown
+tools-used:
+  - libstub
+  - callbackhandler
+  - libdatabroker-1-1
+  - libdbicon-1-0
+ignore:
+  - AGENTS.md
+  - .git
+  - .github
+  - .gitignore
+  - .gitattributes
+  - .luacheckrc
+  - .pkgmeta
+  - .bigwigs-packager
+  - .release
+  - .release-notes
+  - .local
+  - '*.local.md'
+  - .env
+  - .env.*
+  - build.sh
+  - scripts
+  - Artwork
+  - docs
+  - README.md
+  - CONTRIBUTING.md
+  - CHANGELOG.md

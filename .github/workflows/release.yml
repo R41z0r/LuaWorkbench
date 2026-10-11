@@ -1,0 +1,72 @@
+name: Publish release
+on:
+  push:
+    tags: ['*']
+permissions:
+  contents: write
+concurrency:
+  group: publish-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Prepare shared release notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/prepare_release.py "$RELEASE_TAG"
+      - name: Install validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1 luarocks
+          sudo luarocks install luacheck
+      - name: Validate source
+        run: |
+          find . -name '*.lua' -not -path './.git/*' -exec luac5.1 -p {} +
+          luacheck --no-color -q .
+          python3 scripts/check_lua_upvalues.py .
+          python3 scripts/validate_project.py
+      - name: Check publisher configuration
+        env:
+          CF_API_KEY: ${{ secrets.CURSE_API_TOKEN }}
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+          WOWI_API_TOKEN: ${{ secrets.WOWI_API_TOKEN }}
+        run: |
+          test -n "$CF_API_KEY" || { echo 'Missing CURSE_API_TOKEN repository secret'; exit 1; }
+          test -n "$WAGO_API_TOKEN" || { echo 'Missing WAGO_API_TOKEN repository secret'; exit 1; }
+          test -n "$WOWI_API_TOKEN" || { echo 'Missing WOWI_API_TOKEN repository secret'; exit 1; }
+      - uses: actions/checkout@v6
+        with:
+          repository: R41z0r/packager
+          ref: 7635232c5a62ae46908d9e82b8be0575d6d4d5d3
+          path: .bigwigs-packager
+          persist-credentials: false
+      - name: Prepare packager
+        run: |
+          bash .bigwigs-packager/setup-packager.sh
+          python3 scripts/patch_packager.py .bigwigs-packager/release.sh
+      - name: Publish shared package
+        env:
+          CF_API_KEY: ${{ secrets.CURSE_API_TOKEN }}
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+          WOWI_API_TOKEN: ${{ secrets.WOWI_API_TOKEN }}
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LUAWORKBENCH_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          bash .bigwigs-packager/release.sh -m .pkgmeta -r "$GITHUB_WORKSPACE/.release" -n "LuaWorkbench-{project-version}"
+          gh release edit "$LUAWORKBENCH_TAG" --notes-file .release-notes/github.md
+      - name: Preserve generated notes and packages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            .release-notes/
+            .release/*.zip
+          include-hidden-files: true
+          if-no-files-found: ignore
