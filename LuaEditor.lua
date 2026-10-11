@@ -364,7 +364,7 @@ function Editor:Attach(input)
   local original = box:GetScript(event)
   state.scripts[#state.scripts + 1] = { event = event, original = original }
   box:SetScript(event, function(...)
-   if event ~= 'OnTextChanged' or not state.busy then callback(original, ...) end
+   if event ~= 'OnTextChanged' or not state.busy then return callback(original, ...) end
   end)
  end
  wrap('OnTextChanged', function(original, frame, user)
@@ -419,6 +419,12 @@ function Editor:Attach(input)
   if not ignored[key] then
    state.keyEdit = { source = frame:GetText(), cursor = frame:GetCursorPosition(), enter = key == 'ENTER' or key == 'NUMPADENTER' }
   end
+ end)
+ wrap('OnArrowPressed', function(original, frame, key)
+  -- Alt line actions already restored their selection in OnKeyDown. Do not let
+  -- the native Shift-arrow handler extend or replace that restored block.
+  if state.actionLock and (key == 'UP' or key == 'DOWN') and _G.IsAltKeyDown and _G.IsAltKeyDown() then return true end
+  if original then return original(frame, key) end
  end)
  wrap('OnKeyUp', function(original, ...)
   if addon.EditorActions then addon.EditorActions:KeyUp(input) end
@@ -510,7 +516,8 @@ function Editor:Attach(input)
    state.doubleClick = state.lastMouseDown and now - state.lastMouseDown < 0.35
    state.lastMouseDown = now
    state.mouseX, state.mouseY = GetCursorPosition()
-   state.mouseAnchor = (_G.IsShiftKeyDown and IsShiftKeyDown()) and (state.selectionStart or state.actionCursor) or frame:GetCursorPosition()
+   state.mouseAnchor = nil
+   if _G.IsShiftKeyDown and IsShiftKeyDown() then state.mouseAnchor = state.selectionStart or frame:GetCursorPosition() end
    state.mouseSelecting = true
   end
   if original then original(frame, button) end

@@ -9,7 +9,7 @@ function A:Bounds(source, cursor)
  return first, last
 end
 
-function A:Move(source, cursor, direction, selectionStart, selectionEnd)
+function A:Move(source, cursor, direction, duplicate, selectionStart, selectionEnd)
  local first, last = self:Bounds(source, cursor)
  if selectionStart and selectionEnd and selectionStart ~= selectionEnd then
   local low, high = math.min(selectionStart, selectionEnd), math.max(selectionStart, selectionEnd)
@@ -20,6 +20,13 @@ function A:Move(source, cursor, direction, selectionStart, selectionEnd)
  local hasNewline = last > first and source:sub(last, last) == '\n'
  local line = source:sub(first+1, hasNewline and last-1 or last)
  local column = cursor-first
+ if duplicate then
+  local at = direction < 0 and first or last
+  local text = direction < 0 and (line .. '\n') or (hasNewline and (line .. '\n') or ('\n' .. line))
+  local result = source:sub(1, at) .. text .. source:sub(at+1)
+  local position = direction < 0 and (first+column) or (last+(hasNewline and 0 or 1)+column)
+  return result, position
+ end
  if direction < 0 then
   if first == 0 then return source, cursor end
   local previous = (source:sub(1, first-1):match('.*\n()') or 1)-1
@@ -44,7 +51,10 @@ function A:Cursor(input)
  local cursor = box:GetCursorPosition()
  if cursor == state.actionCursor and not state.mouseSelecting then return end
  if state.mouseSelecting then
-  state.selectionStart = state.mouseAnchor or state.actionCursor or cursor
+  -- Mouse-down runs before the native EditBox places its cursor at the click.
+  -- The first cursor callback supplies the actual start of a new mouse selection.
+  if state.mouseAnchor == nil then state.mouseAnchor = cursor end
+  state.selectionStart = state.mouseAnchor
   state.selectionEnd = cursor
   state.selectionUnknown = nil
  elseif _G.IsShiftKeyDown and IsShiftKeyDown() then
@@ -62,10 +72,10 @@ function A:Key(input, key)
  local alt = _G.IsAltKeyDown and IsAltKeyDown()
  local shift = _G.IsShiftKeyDown and IsShiftKeyDown()
  local source, cursor = input:GetText(), box:GetCursorPosition()
- if alt and not ctrl and not shift and (key=='UP' or key=='DOWN') and not E:IsReadOnly(input) then
+ if alt and not ctrl and (key=='UP' or key=='DOWN') and not E:IsReadOnly(input) then
   if state.selectionUnknown then return end
   local first, last = state.selectionStart, state.selectionEnd
-  local text, position = self:Move(source,cursor,key=='UP' and -1 or 1,first,last)
+  local text, position = self:Move(source,cursor,key=='UP' and -1 or 1,shift,first,last)
   E:SetSource(input,text,position)
   state.actionLock, state.actionCursor = math.min(position,#text), math.min(position,#text)
   if first and last and first ~= last then
