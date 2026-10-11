@@ -4,6 +4,8 @@
 
 ### Added
 
+- Open Blizzard’s Table Inspector directly from the editor toolbar alongside Frame Stack and Event Trace.
+
 - Clear search text directly in the script list, code search, text snippets and Knowledge Base.
 
 - Browse documented functions, object methods, systems, structures, enums, events and callbacks in the Knowledge Base. Filter by alphabetically sorted categories, preview and follow type references, and return to previous entries.

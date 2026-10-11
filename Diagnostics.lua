@@ -70,6 +70,12 @@ function D:RefreshDeveloperTools()
 end
 
 function D:ToggleDeveloperTool(kind)
+ if kind == 'tableInspect' then
+  local inspect = _G.SlashCmdList and _G.SlashCmdList.TABLEINSPECT
+  if inspect then inspect('')
+  elseif _G.UIErrorsFrame then _G.UIErrorsFrame:AddMessage(L.developerToolUnavailable, 1, 0.3, 0.3) end
+  return
+ end
  -- Loading Event Trace creates a visible frame; toggle from the pre-load state.
  local traceWasShown = kind == 'eventTrace' and _G.EventTrace and _G.EventTrace:IsShown() or false
  local loader = _G.C_AddOns and _G.C_AddOns.LoadAddOn or _G.LoadAddOn
@@ -91,7 +97,7 @@ end
 
 function D:BuildDeveloperButtons(parent, anchor)
  self.developerButtons, self.developerHooks = {}, {}
- for _, kind in ipairs({ 'eventTrace', 'frameStack' }) do
+ for _, kind in ipairs({ 'tableInspect', 'eventTrace', 'frameStack' }) do
   local button = UI:Button(parent, kind, L[kind .. 'Tool'], function() self:ToggleDeveloperTool(kind) end)
   button:SetPoint('RIGHT', anchor, 'LEFT', -3, 0)
   button.active = UI:Background(button, { 0.08, 0.25, 0.14, 1 })

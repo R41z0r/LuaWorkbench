@@ -123,6 +123,9 @@ function UI:Button(parent, icon, tooltip, callback, color, borderHover)
  elseif icon == "frameStack" then
   line(-7, 3, 3, 3); line(3, 3, 3, -7); line(3, -7, -7, -7); line(-7, -7, -7, 3)
   line(-3, 7, 7, 7); line(7, 7, 7, -3); line(5, -3, 7, -3)
+ elseif icon == "tableInspect" then
+  line(-7, 7, 7, 7); line(7, 7, 7, -7); line(7, -7, -7, -7); line(-7, -7, -7, 7)
+  line(-7, 2, 7, 2); line(-7, -3, 7, -3); line(-2, 7, -2, -7)
  elseif icon == "eventTrace" then
   line(-8, 0, -4, 0); line(-4, 0, -1, 6); line(-1, 6, 2, -6); line(2, -6, 5, 0); line(5, 0, 8, 0)
  elseif icon == "debug" then
