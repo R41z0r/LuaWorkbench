@@ -26,6 +26,8 @@
 
 ### Fixed
 
+- An idle editor no longer repeatedly refreshes unchanged code, line numbers and the script list.
+
 - Knowledge Base opening and live searches avoid unnecessary article formatting and repeated result sorting.
 
 - Knowledge Base navigation buttons remain fully clickable, and opened entries start at the top of the detail view.

@@ -368,6 +368,8 @@ function Editor:Attach(input)
  end
  wrap('OnTextChanged', function(original, frame, user)
   local text = frame:GetText()
+  -- Native layout notifications can repeat without changing the source.
+  if text == state.source then return end
   if self:IsReadOnly(input) and not input.setting and text ~= state.source then
    state.busy = true
    frame:SetText(state.source)

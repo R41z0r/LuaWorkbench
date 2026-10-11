@@ -520,7 +520,7 @@ end
 
 function U:HoverUpdate(elapsed, target, record)
  local D, input = addon.Debugger, target or C.input
- record = record or self:CurrentSource()
+ record = record or (D.paused and self:CurrentSource())
  local source = target and record and record.source or C.source
  local matches = record and (target or record.id == W.current) and record.source == source
  -- A scroll child's geometric bounds may extend behind the inspector.
