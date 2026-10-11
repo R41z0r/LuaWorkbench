@@ -164,8 +164,12 @@ function P:TerminalWrite(...)
   self.terminalLines[#self.terminalLines + 1] = line
   if #self.terminalLines > 100 then table.remove(self.terminalLines, 1) end
  end
+ if not self.terminalBatch then self:RefreshTerminal() end
+end
+
+function P:RefreshTerminal()
  if self.terminal then
-  local joined = table.concat(self.terminalLines, '\n')
+  local joined = table.concat(self.terminalLines or {}, '\n')
   self.terminal.output:SetText(joined)
   if self.terminal.output.SetCursorPosition then self.terminal.output:SetCursorPosition(#joined) end
   local scroll = self.terminal.output.scrollFrame
@@ -174,7 +178,9 @@ function P:TerminalWrite(...)
 end
 
 function P:TerminalDump(value, startKey)
- C:Dump(value, startKey, nil, function(text)
+ local previousBatch = self.terminalBatch
+ self.terminalBatch = true
+ local ok, err = pcall(C.Dump, C, value, startKey, nil, function(text)
   if secret(text) or type(text) ~= 'string' then self:TerminalWrite(text); return end
   -- Strip native dump colors before escaping plain terminal text. Decode
   -- escaped pipes once so literal color-like strings remain literal.
@@ -191,6 +197,9 @@ function P:TerminalDump(value, startKey)
   end
   self:TerminalWrite(table.concat(parts))
  end)
+ self.terminalBatch = previousBatch
+ if not previousBatch then self:RefreshTerminal() end
+ if not ok then error(err, 0) end
 end
 
 function P:ShowTerminal()

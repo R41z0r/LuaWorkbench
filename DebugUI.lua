@@ -251,25 +251,47 @@ end
 
 function U:ValueTooltip(owner, text, hidden, value, secretLabel)
  if self.apiTooltip then self.apiTooltip:Hide() end
- if not self.valueTooltip then
-  local tooltip = CreateFrame('GameTooltip', 'LuaWorkbenchDebugValueTooltip', UIParent, 'GameTooltipTemplate')
-  self.valueTooltip = tooltip
+ local key = hidden and 'secretValueTooltip' or 'plainValueTooltip'
+ local tooltip = self[key]
+ if not tooltip then
+  if hidden then
+   tooltip = CreateFrame('GameTooltip', 'LuaWorkbenchDebugValueTooltip', UIParent, 'GameTooltipTemplate')
+  else
+   tooltip = CreateFrame('Frame', nil, UIParent)
+   tooltip:SetFrameStrata('TOOLTIP')
+   UI:Background(tooltip, UI.colors.background); UI:Border(tooltip, { 0.7, 0.55, 0.25, 1 })
+   tooltip.text = UI:Text(tooltip, '', 12)
+   tooltip.text:SetPoint('TOPLEFT', 8, -8)
+   tooltip.text:SetJustifyH('LEFT'); tooltip.text:SetJustifyV('TOP')
+   tooltip.text:SetNonSpaceWrap(true)
+  end
+  self[key] = tooltip
   tooltip:SetClampedToScreen(true); tooltip:EnableMouse(false)
   tooltip:HookScript('OnShow', function() self:TraceHover('tooltip-show') end)
   tooltip:HookScript('OnHide', function() self:TraceHover('tooltip-hide') end)
  end
- local tooltip = self.valueTooltip
+ if self.valueTooltip and self.valueTooltip ~= tooltip then self.valueTooltip:Hide() end
+ self.valueTooltip = tooltip
  self.tooltipAPI = nil
  self:TraceHover('show-request', owner == C.input.editBox, hidden == true)
  self.tooltipOwner = owner
  if owner ~= C.input.editBox then self.hoverPath, self.hoverToken = nil, nil end
- tooltip:SetOwner(owner, 'ANCHOR_NONE'); tooltip:ClearLines()
+ if hidden then tooltip:SetOwner(owner, 'ANCHOR_NONE'); tooltip:ClearLines() end
  -- Keep the popup clear of the pointer and independent of other UI tooltips.
  local x, y = GetCursorPosition(); local scale = UIParent:GetEffectiveScale()
  tooltip:ClearAllPoints(); tooltip:SetPoint('BOTTOMLEFT', UIParent, 'BOTTOMLEFT', x / scale + 16, y / scale + 20)
  if hidden then
   addon.DebugProbe:SecretTooltip(tooltip, secretLabel, value)
- else tooltip:SetText((text or ''):gsub('<secret>', '|cff88ff88<secret>|r'), 0.85, 0.9, 1, 1, true) end
+ else
+  local label = tooltip.text
+  label:SetHeight(0); label:SetWidth(0); label:SetWordWrap(false)
+  label:SetText((text or ''):gsub('<secret>', '|cff88ff88<secret>|r'))
+  label:SetTextColor(0.85, 0.9, 1)
+  local width = math.min(480, math.max(40, UIParent:GetWidth() - 32), math.max(220, label:GetStringWidth() + 16))
+  label:SetWordWrap(true); label:SetWidth(width - 16)
+  local height = math.min(label:GetStringHeight() + 16, math.max(32, UIParent:GetHeight() - 32))
+  label:SetHeight(height - 16); tooltip:SetSize(width, height)
+ end
  tooltip:Show(); self.tooltipVisible = true
  self:TraceHover('shown', tooltip:IsShown(), tooltip:IsVisible(), tooltip:GetAlpha(), tooltip:GetEffectiveAlpha())
 end

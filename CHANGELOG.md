@@ -26,6 +26,9 @@
 
 ### Fixed
 
+- Debug variable tooltips use wider, text-sized previews without oversized empty margins.
+- Large debug terminal dumps refresh the display once per dump instead of once per output line.
+
 - An idle editor no longer repeatedly refreshes unchanged code, line numbers and the script list.
 
 - Knowledge Base opening and live searches avoid unnecessary article formatting and repeated result sorting.
