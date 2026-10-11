@@ -120,9 +120,13 @@ function UI:Button(parent, icon, tooltip, callback, color, borderHover)
   texture:SetSize(18, 18); texture:SetPoint("CENTER")
   texture:SetTexture(icon == "search" and "Interface\\Common\\UI-Searchbox-Icon" or "Interface\\Buttons\\UI-OptionsButton")
   if icon == "options" then texture:SetDesaturated(true); texture:SetVertexColor(0.78, 0.82, 0.9, 1) end
- elseif icon == "frameStack" then
+ elseif icon == "frameStack" or icon == "inspector" then
   line(-7, 3, 3, 3); line(3, 3, 3, -7); line(3, -7, -7, -7); line(-7, -7, -7, 3)
   line(-3, 7, 7, 7); line(7, 7, 7, -3); line(5, -3, 7, -3)
+ elseif icon == "refresh" then
+  line(5, 4, 1, 7); line(1, 7, -5, 5); line(-5, 5, -7, 0)
+  line(-7, 0, -4, -6); line(-4, -6, 3, -6); line(3, -6, 7, -2)
+  line(5, 8, 5, 3); line(5, 3, 0, 3)
  elseif icon == "tableInspect" then
   line(-7, 7, 7, 7); line(7, 7, 7, -7); line(7, -7, -7, -7); line(-7, -7, -7, 7)
   line(-7, 2, 7, 2); line(-7, -3, 7, -3); line(-2, 7, -2, -7)

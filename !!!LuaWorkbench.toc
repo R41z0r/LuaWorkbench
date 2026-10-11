@@ -58,3 +58,4 @@ Debugger.lua
 DebugUI.lua
 APIHelp.lua
 KnowledgeBase.lua
+Inspector.lua

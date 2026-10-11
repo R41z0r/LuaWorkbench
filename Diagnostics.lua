@@ -70,6 +70,7 @@ function D:RefreshDeveloperTools()
 end
 
 function D:ToggleDeveloperTool(kind)
+ if kind == 'inspector' then addon.Inspector:Pick(); return end
  if kind == 'tableInspect' then
   local inspect = _G.SlashCmdList and _G.SlashCmdList.TABLEINSPECT
   if inspect then inspect('')
@@ -97,7 +98,7 @@ end
 
 function D:BuildDeveloperButtons(parent, anchor)
  self.developerButtons, self.developerHooks = {}, {}
- for _, kind in ipairs({ 'tableInspect', 'eventTrace', 'frameStack' }) do
+ for _, kind in ipairs({ 'inspector', 'tableInspect', 'eventTrace', 'frameStack' }) do
   local button = UI:Button(parent, kind, L[kind .. 'Tool'], function() self:ToggleDeveloperTool(kind) end)
   button:SetPoint('RIGHT', anchor, 'LEFT', -3, 0)
   button.active = UI:Background(button, { 0.08, 0.25, 0.14, 1 })

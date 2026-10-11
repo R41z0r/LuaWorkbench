@@ -4,44 +4,20 @@
 
 ### Added
 
-- Open Blizzard’s Table Inspector directly from the editor toolbar alongside Frame Stack and Event Trace.
-
-- Clear search text directly in the script list, code search, text snippets and Knowledge Base.
-
-- Browse documented functions, object methods, systems, structures, enums, events and callbacks in the Knowledge Base. Filter by alphabetically sorted categories, preview and follow type references, and return to previous entries.
-
-- API help includes documented default values and restriction/secret metadata for functions, arguments and returns.
-
-- Search documented Blizzard functions by name, description or parameter in the new Knowledge Base, with live results and a full detail view. F12 opens the matching API entry while local definitions retain priority. The movable window initially opens beside the editor when screen space permits. Colored signatures and types make entries easier to read, and a right-click action prepares function names for copying.
-
-- Optional Blizzard API hover help with argument and return types, plus a configurable syntax color for documented global functions and namespace calls. Documentation loads when opening the editor outside combat.
+- Explore Blizzard API documentation in a searchable Knowledge Base, including functions, methods, objects, structures, enums, events and callbacks. Filter by category, follow type references and return with Back.
+- View API signatures, arguments, returns, default values and documented restrictions in code hover tooltips. Use F12 to open API documentation and customize API syntax colors.
+- Inspect UI elements with LuaWorkbench’s frame picker and Object Inspector. Browse colored fields and values, search expanded branches, navigate to parents and back, copy access paths or insert references into code. Supported secret values use native hover tooltips.
+- Open debugger variables in the Object Inspector and access Blizzard’s Table Inspector from the toolbar.
+- Clear search fields with one click in the script list, code search, text snippets and Knowledge Base.
 
 ### Changed
 
-- Knowledge Base full-text indexing runs in small background steps with progress feedback; name search remains available while it builds.
-
-- Knowledge Base windows can be resized and remember their size; API help omits the redundant metadata explanation.
-
-- API help consistently displays boolean types and optional argument/default annotations, separately from nullable types.
-
-- Knowledge Base search results no longer show redundant name tooltips.
+- Reduce editor activity while idle and refresh large debug terminal dumps more efficiently.
+- Debug variable tooltips use wider previews sized to their contents.
 
 ### Fixed
 
-- Debug variable tooltips use wider, text-sized previews without oversized empty margins.
-- Large debug terminal dumps refresh the display once per dump instead of once per output line.
-
-- An idle editor no longer repeatedly refreshes unchanged code, line numbers and the script list.
-
-- Knowledge Base opening and live searches avoid unnecessary article formatting and repeated result sorting.
-
-- Knowledge Base navigation buttons remain fully clickable, and opened entries start at the top of the detail view.
-
 - Code hover targets stay aligned with text across long scripts, wrapping and scrolling.
-
-- API arguments with default values are marked optional even when they do not accept nil.
-
-- API hover help uses compact text-sized tooltips with colored signatures and wrapping for long type names.
 
 ## [1.0.0] - 2026-10-11
 

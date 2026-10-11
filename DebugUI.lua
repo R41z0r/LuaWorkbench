@@ -214,6 +214,13 @@ function U:UpdateVariables()
   row.preview = (item.name .. ' = ' .. item.preview):gsub('|', '||')
   row.secretLabel = item.name:gsub('|', '||') .. ' = |cff88ff88<secret>|r'
   row.hasSecretText, row.secretText = item.hasSecretText, item.secretText
+  row.variableName = item.name
+  row:RegisterForClicks('LeftButtonUp', 'RightButtonUp')
+  row:SetScript('OnClick', function(_, button)
+   if button == 'RightButton' and addon.Inspector and addon.Inspector:Readable(row.secretText) then
+    W:OpenMenu(row, { { text = L.inspectorTitle, action = function() addon.Inspector:Show(row.secretText, row.variableName) end } })
+   end
+  end)
   row:Show()
  end
  for index = #(D.variables or {}) + 1, #D.variableRows do
@@ -541,6 +548,9 @@ function U:HoverPath(source, position)
 end
 
 function U:HoverUpdate(elapsed, target, record)
+ if addon.Inspector and addon.Inspector.picking then
+  self:HideTooltip(nil, 'frame-picker'); return
+ end
  local D, input = addon.Debugger, target or C.input
  record = record or (D.paused and self:CurrentSource())
  local source = target and record and record.source or C.source
