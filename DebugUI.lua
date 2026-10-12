@@ -459,8 +459,9 @@ function U:SourceChanged(source)
  local registered = D.sources and D.sources[W.current]
  local stopped = D.armed and ((registered and registered.source ~= source) or (D.scriptId == W.current and source ~= D.source))
  local state = C.input and C.input.queryEditor
- local keyEdit = state and state.keyEdit
- local edit = keyEdit and keyEdit.enter and { oldCursor = keyEdit.cursor, oldSource = keyEdit.source } or nil
+ local edit = state and state.breakpointEdit
+ if state then state.breakpointEdit = nil end
+ if edit and edit.expectedSource and edit.expectedSource ~= source then edit = nil end
  if W.current then D:SourceChanged(W.current, source, edit) end
  if stopped then C:SetStatus(L.debugSourceChanged, true) end
  self:HideTooltip(nil, 'source-changed')

@@ -380,6 +380,9 @@ function Editor:Attach(input)
    return
   end
   state.lineBlock = nil
+  if state.keyEdit and state.keyEdit.enter and not state.breakpointEdit then
+   state.breakpointEdit = {oldCursor=state.keyEdit.cursor, oldSource=state.keyEdit.source}
+  end
   if user and addon.EditorActions then
    local normalized, cursor = addon.EditorActions:Text(input, text)
    if normalized then state.busy = true; frame:SetText(normalized); frame:SetCursorPosition(cursor); state.busy = nil; text = normalized end
@@ -397,6 +400,7 @@ function Editor:Attach(input)
   end
   state.source, state.pending, state.elapsed = text, true, 0
   if original then original(frame, user) end
+  state.breakpointEdit = nil
  end)
  state.changed = state.scripts[#state.scripts].original
  wrap('OnKeyDown', function(original, frame, key)
@@ -416,6 +420,14 @@ function Editor:Attach(input)
   if self:IsReadOnly(input) then return end
   local modified = (_G.IsControlKeyDown and _G.IsControlKeyDown()) or (_G.IsAltKeyDown and _G.IsAltKeyDown()) or (_G.IsMetaKeyDown and _G.IsMetaKeyDown())
   if modified then return end
+  if (key == 'BACKSPACE' or key == 'DELETE') and not (addon.EditorActions and addon.EditorActions:Selection(input)) then
+   local source, cursor = frame:GetText(), frame:GetCursorPosition()
+   local at = key == 'BACKSPACE' and cursor or cursor+1
+   if source:sub(at,at) == '\n' then
+    state.breakpointEdit = {oldCursor=cursor, oldSource=source, joinAt=at-1,
+     expectedSource=source:sub(1,at-1)..source:sub(at+1)}
+   end
+  end
   local ignored = { LSHIFT = true, RSHIFT = true, LCTRL = true, RCTRL = true, LALT = true, RALT = true,
    INSERT = true, DELETE = true, BACKSPACE = true, LEFT = true, RIGHT = true, UP = true, DOWN = true,
    HOME = true, END = true, PAGEUP = true, PAGEDOWN = true, TAB = true, ESCAPE = true }
@@ -490,11 +502,21 @@ function Editor:Attach(input)
    or (_G.IsAltKeyDown and _G.IsAltKeyDown()) or (_G.IsMetaKeyDown and _G.IsMetaKeyDown()) then return end
   -- Installing this handler replaces the EditBox's native newline behavior.
   local previous = frame:GetText()
+  state.breakpointEdit = {oldCursor=frame:GetCursorPosition(), oldSource=previous}
   state.keyEdit = nil
   frame:Insert('\n')
+  -- Native OnTextChanged may arrive after Insert returns. Keep the hint until
+  -- SourceChanged consumes it, tied to the exact result of this Enter operation.
+  if state.breakpointEdit then
+   state.breakpointEdit.expectedSource = frame:GetText()
+   if frame:GetText() == previous then state.breakpointEdit = nil end
+  end
   if addon.Workspace.db.options.autoIndent ~= false then
    local indented, cursor = self:NewlineIndent(previous, frame:GetText(), frame:GetCursorPosition())
-   if indented then self:SetSource(input, indented, cursor) end
+   if indented then
+    if state.breakpointEdit then state.breakpointEdit.expectedSource = indented end
+    self:SetSource(input, indented, cursor)
+   end
   end
  end)
  wrap('OnTabPressed', function(_, frame)

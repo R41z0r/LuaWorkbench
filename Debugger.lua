@@ -29,6 +29,16 @@ function D:RemapBreakpoints(points, previous, source, edit)
   for line in pairs(points) do mapped[line] = true end
   return mapped
  end
+ -- Removing a single newline joins two surviving lines; it is not deletion
+ -- of the lower line's breakpoint, even when that line was empty.
+ local joinAt = edit and edit.joinAt
+ if type(joinAt) == 'number' and edit.oldSource == previous and joinAt >= 0
+  and previous:sub(joinAt+1,joinAt+1) == '\n'
+  and source == previous:sub(1,joinAt)..previous:sub(joinAt+2) then
+  local joinedLine = lineAt(lineStarts(previous), joinAt)
+  for line in pairs(points) do mapped[line > joinedLine and line-1 or line] = true end
+  return mapped
+ end
  local prefix, oldLength, newLength = 0, #previous, #source
  local limit = math.min(oldLength, newLength)
  while prefix < limit and previous:byte(prefix + 1) == source:byte(prefix + 1) do prefix = prefix + 1 end

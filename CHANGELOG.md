@@ -14,6 +14,8 @@
 
 ### Fixed
 
+- Keep breakpoints aligned when inserting newlines or joining lines with Backspace/Delete, including blank lines and automatic indentation.
+
 - Bound debug terminal output for very large strings and tables.
 
 ## [1.1.0] - 2026-10-11
