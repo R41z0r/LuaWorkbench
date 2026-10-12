@@ -96,6 +96,7 @@ function A:Key(input, key)
    moved.logicalStart, moved.logicalEnd, moved.logicalCursor = first+delta, last+delta, position
    state.lineBlock = moved
   end
+  if addon.Autocomplete then addon.Autocomplete:Hide() end
   return true
  end
  local meta = _G.IsMetaKeyDown and _G.IsMetaKeyDown()

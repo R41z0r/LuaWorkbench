@@ -17,49 +17,59 @@ local function scalar(value)
  if kind == 'string' or kind == 'number' or kind == 'boolean' or kind == 'nil' then return C:Format(value):sub(1, 180) end
  return '<' .. kind .. '>'
 end
-local function preview(value, full)
- local seen, budget = {}, 32
+local function preview(value, full, limit)
+ local seen, budget = {}, full and 128 or 32
+ local remaining = limit or (full and 8192 or 2400)
+ local output = {}
+ local function append(text)
+  local part = text:sub(1, remaining)
+  output[#output+1] = part
+  remaining = remaining - #part
+ end
  local function atom(item)
   if secret(item) then return '<secret>' end
   local kind = type(item)
   if kind ~= 'string' and kind ~= 'number' and kind ~= 'boolean' and kind ~= 'nil' then return '<' .. kind .. '>' end
-  local text = tostring(item):gsub('\t', '    ')
-  if not full and #text > 240 then text = text:sub(1, 240) .. '...' end
+  local text = tostring(item)
+  local cap = full and remaining or math.min(240, remaining)
+  local truncated = #text > cap
+  text = text:sub(1, cap):gsub('\t', '    ')
+  if truncated then text = text:sub(1, math.max(0,cap-3)) .. '...' end
   return text
  end
  -- Iterative traversal avoids a Lua stack overflow for deeply nested tables.
- local output, stack = {}, { { value = value, depth = 0 } }
- while #stack > 0 do
+ local stack = { { value = value, depth = 0 } }
+ while #stack > 0 and remaining > 0 do
   local node = stack[#stack]
   if node.open then
    local ok, key, item = pcall(next, node.value, node.key)
    if not ok or secret(key) then
-    output[#output + 1] = ok and '<secret>' or '<unavailable>'
-    output[#output + 1] = ' }'; table.remove(stack)
+    append(ok and '<secret>' or '<unavailable>')
+    append(' }'); table.remove(stack)
    elseif key == nil then
-    output[#output + 1] = ' }'; table.remove(stack)
-   elseif not full and budget <= 0 then
-    output[#output + 1] = '... }'; table.remove(stack)
+    append(' }'); table.remove(stack)
+   elseif budget <= 0 then
+    append('... }'); table.remove(stack)
    else
     node.key = key
     budget = budget - 1
-    output[#output + 1] = (node.count > 0 and ',' or '') .. '\n' .. string.rep(' ', math.min(node.depth + 1, 20) * 2) .. atom(key) .. ' = '
+    append((node.count > 0 and ',' or '') .. '\n' .. string.rep(' ', math.min(node.depth + 1, 20) * 2) .. atom(key) .. ' = ')
     node.count = node.count + 1
     stack[#stack + 1] = { value = item, depth = node.depth + 1 }
    end
   elseif secret(node.value) or type(node.value) ~= 'table' then
-   output[#output + 1] = atom(node.value); table.remove(stack)
+   append(atom(node.value)); table.remove(stack)
   elseif seen[node.value] then
-   output[#output + 1] = '<reference>'; table.remove(stack)
-  elseif not full and node.depth >= 3 then
-   output[#output + 1] = '{ ... }'; table.remove(stack)
+   append('<reference>'); table.remove(stack)
+  elseif node.depth >= (full and 8 or 3) then
+   append('{ ... }'); table.remove(stack)
   else
    seen[node.value] = true; node.open, node.count = true, 0
-   output[#output + 1] = '{ '
+   append('{ ')
   end
  end
  local text = table.concat(output)
- if not full and #text > 2400 then text = text:sub(1, 2400) .. '\n...' end
+ if #stack > 0 then text = text:sub(1, math.max(0,#text-4)) .. '\n...' end
  return text
 end
 
@@ -157,12 +167,23 @@ end
 
 function P:TerminalWrite(...)
  self.terminalLines = self.terminalLines or {}
- local parts = {}
- for index = 1, select('#', ...) do parts[index] = preview(select(index, ...), true) end
+ local parts, remaining = {}, 8192
+ for index = 1, select('#', ...) do
+  if remaining < 8 then parts[#parts+1] = '...'; break end
+  local part = preview(select(index, ...), true, remaining-4)
+  parts[#parts+1], remaining = part, remaining-#part-4
+ end
  local text = table.concat(parts, '    '):gsub('|', '||')
  for line in (text .. '\n'):gmatch('(.-)\n') do
   self.terminalLines[#self.terminalLines + 1] = line
   if #self.terminalLines > 100 then table.remove(self.terminalLines, 1) end
+ end
+ -- Bound retained bytes as well as line count, including escaped pipe characters.
+ local bytes = 0
+ for _,line in ipairs(self.terminalLines) do bytes = bytes + #line + 1 end
+ while bytes > 65536 do
+  bytes = bytes - #self.terminalLines[1] - 1
+  table.remove(self.terminalLines,1)
  end
  if not self.terminalBatch then self:RefreshTerminal() end
 end

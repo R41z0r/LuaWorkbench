@@ -59,4 +59,5 @@ DebugUI.lua
 APIHelp.lua
 KnowledgeBase.lua
 Inspector.lua
+Autocomplete.lua
 EditorActions.lua

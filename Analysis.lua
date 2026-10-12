@@ -20,15 +20,20 @@ function Parser:expect(text)
 end
 function Parser:scope()
  self.scopeID=(self.scopeID or 0)+1
- self.current = { parent = self.current, names = {}, id=self.scopeID }
+ self.current = { parent = self.current, names = {}, id=self.scopeID, start0=self:peek().start-1 }
 end
-function Parser:leave() self.current = self.current.parent end
+function Parser:leave()
+ local previous = self.items[self.index - 1]
+ self.current.finish0 = previous and previous.text == 'end' and previous.finish or self:peek().start - 1
+ if self:peek().kind == 'eof' and not (previous and previous.text == 'end') then self.current.finish0 = self.eof.start end
+ self.current = self.current.parent
+end
 function Parser:lookup(name)
  local scope = self.current
  while scope do if scope.names[name] then return scope.names[name] end; scope = scope.parent end
 end
 function Parser:declare(token, kind, value)
- local definition = { name = token.text, position0 = token.start - 1, kind = kind or 'localVariable', value = value, scopeID=self.current.id, functionDepth=self.functionDepth or 0 }
+ local definition = { name = token.text, position0 = token.start - 1, kind = kind or 'localVariable', value = value, scope=self.current, visible0=(self.items[self.index-1] or token).finish, scopeID=self.current.id, functionDepth=self.functionDepth or 0 }
  self.current.names[token.text] = definition
  token.definition, token.semanticKind = definition, definition.kind
  self.result.definitions[#self.result.definitions + 1] = definition
@@ -49,7 +54,13 @@ function Parser:body(method)
  self.functionDepth=(self.functionDepth or 0)+1
  self:scope()
  self:expect('(')
- if method then self.current.names.self = { name='self', kind='parameter' } end
+ if method then
+  -- An implicit parameter has scope visibility but no navigable source declaration.
+  local definition = {name='self', kind='parameter', synthetic=true, scope=self.current,
+   visible0=self.current.start0, scopeID=self.current.id, functionDepth=self.functionDepth}
+  self.current.names.self = definition
+  self.result.definitions[#self.result.definitions+1] = definition
+ end
  while self:peek().text ~= ')' and self:peek().kind ~= 'eof' do
   local token = self:take()
   if identifier(token) then self:declare(token, 'parameter') end

@@ -402,6 +402,7 @@ function Editor:Attach(input)
  wrap('OnKeyDown', function(original, frame, key)
   state.formatEdit = nil
   if addon.EditorActions and addon.EditorActions:Key(input, key) then state.keyEdit = nil; return end
+  if addon.Autocomplete and addon.Autocomplete:Key(input, key) then state.keyEdit = nil; return end
   if key == 'F' and frame:HasFocus() and not self:IsReadOnly(input) and _G.IsShiftKeyDown and _G.IsShiftKeyDown()
    and _G.IsAltKeyDown and _G.IsAltKeyDown() and not (_G.IsControlKeyDown and _G.IsControlKeyDown())
    and not (_G.IsMetaKeyDown and _G.IsMetaKeyDown()) then
@@ -426,10 +427,15 @@ function Editor:Attach(input)
   -- Alt line actions already restored their selection in OnKeyDown. Do not let
   -- the native Shift-arrow handler extend or replace that restored block.
   if state.actionLock and (key == 'UP' or key == 'DOWN') and _G.IsAltKeyDown and _G.IsAltKeyDown() then return true end
+  if addon.Autocomplete and addon.Autocomplete:Arrow(input, key) then return true end
   if original then return original(frame, key) end
  end)
  wrap('OnKeyUp', function(original, ...)
   if addon.EditorActions then addon.EditorActions:KeyUp(input) end
+  if addon.Autocomplete then
+   addon.Autocomplete.keySource, addon.Autocomplete.keyCursor = nil, nil
+   addon.Autocomplete.arrowKey, addon.Autocomplete.arrowOrigin = nil, nil
+  end
   state.formatEdit = nil
   if original then original(...) end
   state.keyEdit = nil
@@ -443,6 +449,11 @@ function Editor:Attach(input)
    state.busy = true; frame:SetCursorPosition(state.actionLock); state.busy = nil; return
   end
   if addon.EditorActions then addon.EditorActions:Cursor(input) end
+  local completion = addon.Autocomplete
+  if completion and completion.keyCursor and completion.input == input and not state.busy
+   and frame:GetText() == completion.keySource and frame:GetCursorPosition() ~= completion.keyCursor then
+   state.busy = true; frame:SetCursorPosition(completion.keyCursor); state.busy = nil; return
+  end
   if not state.busy and frame:GetText() == state.source then state.lastCursor = frame:GetCursorPosition() end
   if original then original(frame, x, y, width, height) end
   state.caret:ClearAllPoints()
@@ -456,12 +467,38 @@ function Editor:Attach(input)
  end)
  wrap('OnUpdate', function(original, frame, elapsed)
   if original then original(frame, elapsed) end
+  if addon.Autocomplete then addon.Autocomplete:Tick(input, elapsed) end
   state.elapsed = state.elapsed + elapsed
   if state.pending and state.elapsed >= 0.08 then self:Paint(input) end
   state.caret:SetShown(frame:HasFocus() and state.elapsed % 1 < 0.5)
   state.active:SetShown(frame:HasFocus())
  end)
+ wrap('OnEscapePressed', function(original, frame)
+  local completion = addon.Autocomplete
+  if completion and completion.input == input and completion.panel and completion.panel:IsShown() then completion:Hide(); return end
+  if original then original(frame) end
+ end)
+ wrap('OnEnterPressed', function(original, frame)
+  local modified = (_G.IsControlKeyDown and _G.IsControlKeyDown()) or (_G.IsAltKeyDown and _G.IsAltKeyDown())
+   or (_G.IsMetaKeyDown and _G.IsMetaKeyDown()) or (_G.IsShiftKeyDown and _G.IsShiftKeyDown())
+  if not modified and addon.Autocomplete and addon.Autocomplete:Accept(input) then
+   state.keyEdit = nil
+   return true
+  end
+  if original then return original(frame) end
+  if self:IsReadOnly(input) or (_G.IsControlKeyDown and _G.IsControlKeyDown())
+   or (_G.IsAltKeyDown and _G.IsAltKeyDown()) or (_G.IsMetaKeyDown and _G.IsMetaKeyDown()) then return end
+  -- Installing this handler replaces the EditBox's native newline behavior.
+  local previous = frame:GetText()
+  state.keyEdit = nil
+  frame:Insert('\n')
+  if addon.Workspace.db.options.autoIndent ~= false then
+   local indented, cursor = self:NewlineIndent(previous, frame:GetText(), frame:GetCursorPosition())
+   if indented then self:SetSource(input, indented, cursor) end
+  end
+ end)
  wrap('OnTabPressed', function(_, frame)
+  if addon.Autocomplete and addon.Autocomplete:Accept(input) then return end
   if self:IsReadOnly(input) then return end
   if _G.IsShiftKeyDown and _G.IsShiftKeyDown() then
    local source, cursor = frame:GetText(), frame:GetCursorPosition()
@@ -473,15 +510,23 @@ function Editor:Attach(input)
  end)
  wrap('OnEditFocusLost', function(original, ...)
   if addon.EditorActions and input == addon.Query.Console.input then addon.EditorActions.lineClipboard = nil end
+  if addon.Autocomplete and addon.Autocomplete.input == input then addon.Autocomplete:Hide() end
   state.formatEdit = nil
   if original then original(...) end
  end)
  wrap('OnHide', function(original, ...)
   if addon.EditorActions and input == addon.Query.Console.input then addon.EditorActions.lineClipboard = nil end
+  if addon.Autocomplete and addon.Autocomplete.input == input then addon.Autocomplete:Hide() end
   state.formatEdit = nil
   if original then original(...) end
  end)
  wrap('OnChar', function(original, frame, char)
+  local completion = addon.Autocomplete
+  if completion and completion.keySource and char == ' ' then
+   local source, cursor = completion.keySource, completion.keyCursor
+   completion.keySource, completion.keyCursor = nil, nil
+   if frame:GetText() == source:sub(1, cursor) .. char .. source:sub(cursor+1) then self:SetSource(input, source, cursor); return end
+  end
   if self:IsReadOnly(input) then state.keyEdit, state.formatEdit = nil, nil; return end
   local formatEdit = state.formatEdit
   state.formatEdit = nil
