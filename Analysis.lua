@@ -221,7 +221,7 @@ function Parser:statement()
   self:take()
   if self:peek().kind ~= 'eof' and not ({ ['end']=true, ['else']=true, ['elseif']=true, ['until']=true, [';']=true })[self:peek().text] then
    local values=self:expressions()
-   if not self.current.parent and values[1] and values[1].members and not values[1].dynamic then self.result.exports=values[1].members end
+   if not self.current.parent and values[1] and values[1].members and not values[1].dynamic then self.result.exports=values[1].members; self.result.exportValue=values[1] end
   end
  elseif text == 'break' or text == ';' then self:take()
  else
@@ -295,7 +295,7 @@ function Analysis:Get(source)
   local ok=pcall(parser.chunk, parser, {})
   if not ok then result.limited=true end
  end
- if result.limited or result.incomplete then result.exports={}; result.imports={} end
+ if result.limited or result.incomplete then result.exports={}; result.imports={}; result.exportValue=nil end
  if result.globals.requireHelper then
   result.imports={}
   for _, token in ipairs(result.tokens) do token.import=nil end

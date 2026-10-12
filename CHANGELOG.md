@@ -4,6 +4,8 @@
 
 ### Added
 
+- Complete statically declared members and function parameters from saved `requireHelper` modules.
+
 - Complete documented enumeration names and their values through `Enum.`.
 
 - Complete members of local tables and show parameter names for locally defined functions and methods.
@@ -19,6 +21,8 @@
 - Move the current line or selected line blocks with Alt+Up/Down and duplicate them with Alt+Shift+Up/Down, including blocks selected with the mouse and trailing empty lines at the end of the document.
 
 ### Changed
+
+- Use Shift+F12 to return from a definition jump, keeping Option+Arrow available for text navigation.
 
 - Dismissed parameter help stays closed during cursor navigation; Ctrl+Space opens it again for the current call.
 

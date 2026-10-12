@@ -89,6 +89,20 @@ function A:Alias(context, name)
 end
 
 -- Read only values established before the caret; aliases share table identity.
+function A:HelperValue(value, cursor)
+ local seen={}
+ for _=1,8 do
+  if not (value and value.module) then return value,cursor end
+  if seen[value.module] then return end
+  seen[value.module]=true
+  local module=addon.Helpers:Resolve(value.module)
+  if not module then return end
+  local source=addon.Workspace:NormalizeSource(module.source)
+  local analysis=addon.Analysis:Get(source)
+  value,cursor=analysis.exportValue,#source+1
+ end
+end
+
 function A:Value(context, path)
  local root = path:match('^[%a_][%w_]*')
  local definition = root and context.visible[root]
@@ -96,14 +110,17 @@ function A:Value(context, path)
  for _,entry in ipairs(definition and definition.completionValues or {}) do
   if entry.position0 <= (context.lookupCursor or context.cursor) then value=entry.value end
  end
- if value and value.completionInvalidated0 and value.completionInvalidated0 <= (context.lookupCursor or context.cursor) then return end
+ local valueCursor
+ value,valueCursor=self:HelperValue(value,context.lookupCursor or context.cursor)
+ if value and value.completionInvalidated0 and value.completionInvalidated0 <= valueCursor then return end
  for name in path:sub(root and #root+1 or 1):gmatch('[%.:]([%a_][%w_]*)') do
   local history=value and value.completionMembers and value.completionMembers[name]
   value=nil
-  for _,entry in ipairs(history or {}) do if entry.position0 <= (context.lookupCursor or context.cursor) then value=entry.value end end
+  for _,entry in ipairs(history or {}) do if entry.position0 <= valueCursor then value=entry.value end end
+  value,valueCursor=self:HelperValue(value,valueCursor)
  end
- if value and value.completionInvalidated0 and value.completionInvalidated0 <= (context.lookupCursor or context.cursor) then return end
- return value or nil
+ if value and value.completionInvalidated0 and value.completionInvalidated0 <= valueCursor then return end
+ return value or nil,valueCursor
 end
 
 function A:Suggest(context, manual)
@@ -116,10 +133,10 @@ function A:Suggest(context, manual)
  end
  local path, separator = prefix:match('^(.*)([%.:])[%w_]*$')
  if path then
-  local owner=self:Value(context,path)
+  local owner,valueCursor=self:Value(context,path)
   for name,history in pairs(owner and owner.completionMembers or {}) do
    local value
-   for _,entry in ipairs(history) do if entry.position0 <= (context.lookupCursor or context.cursor) then value=entry.value end end
+   for _,entry in ipairs(history) do if entry.position0 <= valueCursor then value=entry.value end end
    if value and (separator ~= ':' or value.parameters) then
     add(path..separator..name,value.parameters and 'functionName' or 'identifier')
    end

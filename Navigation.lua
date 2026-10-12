@@ -55,7 +55,7 @@ function N:SavedSnapshot(module, definition)
   self.snapshotInput = UI:Editor(panel, L.savedCodeOnly, true)
   self.snapshotInput.frame:SetPoint('TOPLEFT', 8, -90); self.snapshotInput.frame:SetPoint('BOTTOMRIGHT', -8, 8)
   self.snapshotInput.editBox:HookScript('OnKeyDown', function(_, key)
-   if key == 'LEFT' and _G.IsAltKeyDown and IsAltKeyDown() then self:Back() end
+   if self:IsBackKey(key) then self:Back() end
   end)
   self.snapshotInput.editBox:SetScript('OnEscapePressed', function() self:Back() end)
   panel:SetScript('OnHide', function() self.snapshotInput:ClearFocus() end)
@@ -110,12 +110,17 @@ function N:Go(target)
  W:OpenMenu(Console.input.frame, entries)
 end
 
+function N:IsBackKey(key)
+ return key == 'F12' and IsShiftKeyDown() and not IsControlKeyDown()
+  and not (_G.IsAltKeyDown and IsAltKeyDown()) and not (_G.IsMetaKeyDown and _G.IsMetaKeyDown())
+end
+
 function N:Shortcut(key)
  if not W.window or not W.window:IsShown() or not Console.input or not Console.input.editBox:HasFocus() then return false end
- if key == 'F12' and not IsControlKeyDown() and not IsShiftKeyDown() and not (_G.IsAltKeyDown and IsAltKeyDown()) then
+ if key == 'F12' and not IsControlKeyDown() and not IsShiftKeyDown() and not (_G.IsAltKeyDown and IsAltKeyDown()) and not (_G.IsMetaKeyDown and _G.IsMetaKeyDown()) then
   if not self.held then self.held = key; self:Go() end
   return true
- elseif key == 'LEFT' and _G.IsAltKeyDown and IsAltKeyDown() and not IsControlKeyDown() then
+ elseif self:IsBackKey(key) then
   if not self.held then self.held = key; self:Back() end
   return true
  end

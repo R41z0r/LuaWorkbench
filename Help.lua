@@ -99,7 +99,7 @@ function W:ShowHelp()
   { 'Shift+F5', L.debugStop },
   { 'F5', L.debugContinue },
   { 'F12', L.goToDefinition },
-  { 'Alt+Left', L.navigationBack },
+  { 'Shift+F12', L.navigationBack },
   { 'Ctrl+F', L.findCode },
   { 'Ctrl+Shift+F', L.searchSnippets },
   { 'Enter / Shift+Enter', L.nextMatch .. ' / ' .. L.previousMatch },
