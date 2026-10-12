@@ -322,7 +322,7 @@ function Workspace:RunShortcut(key)
   if box:HasFocus() then active = true end
  end
  if not active and not self.f5Held then return false end
- if not self.f5Held then self.f5Held = true; self:Run() end
+ if not self.f5Held then self.f5Held = true; self:Run(true) end
  return true
 end
 
@@ -337,13 +337,13 @@ function Workspace:Shortcut(key)
  elseif key == 'ENTER' or key == 'NUMPADENTER' then self:Run() end
 end
 
-function Workspace:Run()
+function Workspace:Run(preserveFocus)
  if addon.Debugger and addon.Debugger.armed and addon.Debugger.scriptId == self.current then
   if addon.Debugger.paused then addon.Debugger:Continue() else addon.Debugger:Enqueue(nil) end
   return
  end
  if self.db.clearOnRun[self.current] then Console:Clear() end
- Console.input:ClearFocus()
+ if not preserveFocus then Console.input:ClearFocus() end
  Console:Run(Console.input:GetText())
 end
 

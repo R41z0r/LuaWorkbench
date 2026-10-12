@@ -14,6 +14,8 @@
 
 ### Fixed
 
+- Keep the code editor focused when running a script with F5.
+
 - Keep breakpoints aligned when inserting newlines or joining lines with Backspace/Delete, including blank lines and automatic indentation.
 
 - Bound debug terminal output for very large strings and tables.
