@@ -97,6 +97,82 @@ function A:BackwardRange(source, cursor, mode)
  return at
 end
 
+function A:BackwardWord(source, cursor)
+ local target = self:BackwardRange(source,cursor,'word')
+ local first = self:Bounds(source,cursor)
+ local at = cursor
+ while at > first and source:sub(at,at):match('[ \t]') do at=at-1 end
+ local byte = source:byte(at)
+ -- Backward navigation includes separators with the preceding word. Deletion
+ -- keeps its own boundaries, and forward navigation still stops before a dot.
+ if target > first and byte and byte < 128 and not source:sub(at,at):match('[%w_]') then
+  local preceding = source:byte(target)
+  if preceding and (preceding >= 128 or source:sub(target,target):match('[%w_]')) then
+   target = self:BackwardRange(source,target,'word')
+  end
+ end
+ return target
+end
+
+function A:ForwardWord(source, cursor)
+ local _, last = self:Bounds(source,cursor)
+ local finish = source:sub(last,last) == '\n' and last-1 or last
+ if cursor >= finish then return math.min(#source,cursor+1) end
+ local at = cursor
+ while at < finish and source:sub(at+1,at+1):match('[ \t]') do at=at+1 end
+ local function word(pos)
+  local byte = source:byte(pos)
+  return byte and (byte >= 128 or source:sub(pos,pos):match('[%w_]') ~= nil)
+ end
+ local isWord = word(at+1)
+ while at < finish and not source:sub(at+1,at+1):match('[ \t]') and word(at+1) == isWord do at=at+1 end
+ -- Starting on a separator includes the following word, but starting within
+ -- a word still stops at its end so reversing a selection can leave punctuation.
+ if not isWord then
+  while at < finish and word(at+1) do at=at+1 end
+ end
+ return at
+end
+
+function A:RestoreNavigation(input)
+ local state, box = input.queryEditor, input.editBox
+ local range = state.navigationRange
+ if not range or state.busy then return end
+ if range.source ~= input:GetText() then
+  state.navigationRange, state.navigationKey, state.actionLock = nil,nil,nil
+  return
+ end
+ state.busy = true
+ box:SetCursorPosition(range.target)
+ if range.anchor then box:HighlightText(math.min(range.anchor,range.target),math.max(range.anchor,range.target))
+ else box:HighlightText(0,0) end
+ state.selectionStart, state.selectionEnd, state.selectionUnknown = range.anchor, range.anchor and range.target or nil, nil
+ state.actionCursor = range.target
+ state.busy = nil
+end
+
+function A:Navigate(input, key, line, extend)
+ local state, box = input.queryEditor, input.editBox
+ if extend and state.selectionUnknown then return end
+ local source, cursor = input:GetText(), box:GetCursorPosition()
+ local target
+ if key == 'UP' or key == 'DOWN' then target = key == 'UP' and 0 or #source
+ elseif line then
+  local first,last = self:Bounds(source,cursor)
+  target = key == 'LEFT' and first or (source:sub(last,last)=='\n' and last-1 or last)
+ else target = key == 'LEFT' and self:BackwardWord(source,cursor) or self:ForwardWord(source,cursor) end
+ local anchor = extend and (self:Selection(input) and state.selectionStart or cursor) or nil
+ if addon.Autocomplete then
+  addon.Autocomplete:Hide()
+  addon.Autocomplete.keySource, addon.Autocomplete.keyCursor = nil,nil
+ end
+ state.lineBlock = nil
+ state.actionLock, state.navigationKey = target,key
+ state.navigationRange = {source=source,anchor=anchor,target=target}
+ self:RestoreNavigation(input)
+ return true
+end
+
 function A:Key(input, key)
  if input ~= addon.Query.Console.input then return end
  local state, box = input.queryEditor, input.editBox
@@ -105,6 +181,9 @@ function A:Key(input, key)
  local shift = _G.IsShiftKeyDown and IsShiftKeyDown()
  local source, cursor = input:GetText(), box:GetCursorPosition()
  local meta = _G.IsMetaKeyDown and _G.IsMetaKeyDown()
+ if _G.IsMacClient and _G.IsMacClient() and not ctrl and ((alt or meta) and (key=='LEFT' or key=='RIGHT') or meta and not alt and (key=='UP' or key=='DOWN')) then
+  return self:Navigate(input,key,meta,shift)
+ end
  if key == 'BACKSPACE' and _G.IsMacClient and _G.IsMacClient() and (ctrl or alt or meta)
   and not E:IsReadOnly(input) and not self:Selection(input) then
   local first = self:BackwardRange(source,cursor,meta and 'line' or (alt and 'word' or 'character'))
@@ -203,6 +282,8 @@ end
 
 function A:KeyUp(input)
  local state, box = input.queryEditor, input.editBox
+ if state.navigationKey then self:RestoreNavigation(input) end
+ state.navigationKey, state.navigationRange = nil,nil
  local clip=state.clipboard
  local backward = state.backwardDelete
  state.backwardDelete = nil

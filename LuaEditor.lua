@@ -436,6 +436,7 @@ function Editor:Attach(input)
   end
  end)
  wrap('OnArrowPressed', function(original, frame, key)
+  if state.navigationKey == key then addon.EditorActions:RestoreNavigation(input); return true end
   -- Alt line actions already restored their selection in OnKeyDown. Do not let
   -- the native Shift-arrow handler extend or replace that restored block.
   if state.actionLock and (key == 'UP' or key == 'DOWN') and _G.IsAltKeyDown and _G.IsAltKeyDown() then return true end
@@ -458,7 +459,9 @@ function Editor:Attach(input)
  end)
  wrap('OnCursorChanged', function(original, frame, x, y, width, height)
   if state.actionLock and not state.busy and frame:GetCursorPosition() ~= state.actionLock then
-   state.busy = true; frame:SetCursorPosition(state.actionLock); state.busy = nil; return
+   if state.navigationKey then addon.EditorActions:RestoreNavigation(input)
+   else state.busy = true; frame:SetCursorPosition(state.actionLock); state.busy = nil end
+   return
   end
   if addon.EditorActions then addon.EditorActions:Cursor(input) end
   local completion = addon.Autocomplete
@@ -531,6 +534,7 @@ function Editor:Attach(input)
   else frame:Insert(string.rep(' ', self:IndentWidth())) end
  end)
  wrap('OnEditFocusLost', function(original, ...)
+  if state.navigationKey then state.navigationKey, state.navigationRange, state.actionLock = nil,nil,nil end
   state.backwardDelete = nil
   if addon.EditorActions and input == addon.Query.Console.input then addon.EditorActions.lineClipboard = nil end
   if addon.Autocomplete and addon.Autocomplete.input == input then addon.Autocomplete:Hide() end
@@ -538,6 +542,7 @@ function Editor:Attach(input)
   if original then original(...) end
  end)
  wrap('OnHide', function(original, ...)
+  if state.navigationKey then state.navigationKey, state.navigationRange, state.actionLock = nil,nil,nil end
   state.backwardDelete = nil
   if addon.EditorActions and input == addon.Query.Console.input then addon.EditorActions.lineClipboard = nil end
   if addon.Autocomplete and addon.Autocomplete.input == input then addon.Autocomplete:Hide() end

@@ -14,6 +14,8 @@
 
 ### Changed
 
+- On macOS, Option+Left/Right navigates by word and Command+Left/Right moves to line boundaries and Command+Up/Down to code boundaries; Shift extends the selection.
+
 - On macOS, Ctrl+Backspace deletes one character, Option+Backspace deletes the previous word, and Command+Backspace deletes to the start of the current line.
 
 ### Fixed
