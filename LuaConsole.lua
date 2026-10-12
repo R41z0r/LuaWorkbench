@@ -217,8 +217,8 @@ function Console:UpdateLineNumbers()
 		state.measure:SetFont(font, size, flags)
 		state.measure:SetSpacing(spacing)
 		state.measure:SetWidth(math.max(1, width))
-		state.positions = {}
-		local offset, sourceStart = 0, 1
+		state.positions = state.positions or {}
+		local offset, sourceStart, line = 0, 1, 0
 		for text in (source .. "\n"):gmatch("(.-)\n") do
 			local height = heights[text] or previousHeights[text]
 			if not height then
@@ -226,10 +226,15 @@ function Console:UpdateLineNumbers()
 				height = math.max(size + spacing, state.measure:GetStringHeight())
 			end
 			heights[text] = height
-			state.positions[#state.positions + 1] = { offset = offset, height = height, sourceStart=sourceStart, sourceEnd=sourceStart+#text }
+			line = line + 1
+			local position = state.positions[line] or {}
+			state.positions[line] = position
+			position.offset, position.height = offset, height
+			position.sourceStart, position.sourceEnd = sourceStart, sourceStart+#text
 			sourceStart=sourceStart+#text+1
 			offset = offset + height
 		end
+		for index = #state.positions, line+1, -1 do state.positions[index] = nil end
 	end
 	local current = self:GetLinePosition(source, editBox:GetCursorPosition())
 	local errorLine = self.lastError and self.lastError.line
@@ -237,7 +242,17 @@ function Console:UpdateLineNumbers()
 	state.measure:SetText(tostring(#state.positions))
 	state.numberWidth = state.measure:GetStringWidth()
 	local used, visible = 0, {}
-	for line, position in ipairs(state.positions) do
+ -- Positions are ordered by vertical offset. Cursor and scroll callbacks only
+ -- need the visible rows, not a traversal of the entire document.
+ local first, high = 1, #state.positions+1
+ while first < high do
+  local middle = math.floor((first+high)/2)
+  local position = state.positions[middle]
+  if position.offset+position.height < scrollOffset then first=middle+1 else high=middle end
+ end
+ for line = first, #state.positions do
+  local position = state.positions[line]
+  if position.offset >= scrollOffset+viewport then break end
 		if position.offset + position.height >= scrollOffset and position.offset < scrollOffset + viewport then
 			used = used + 1
 			local row = state.rows[used]

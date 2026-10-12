@@ -36,6 +36,8 @@
 
 ### Fixed
 
+- Reduce line-number allocation and scrolling overhead in large scripts.
+
 - Reduce repeated line-ending conversion work while editing large scripts.
 
 - Keep syntax colors throughout very large scripts and avoid automatic full-document analysis while editing them.
