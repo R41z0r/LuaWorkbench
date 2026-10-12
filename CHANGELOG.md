@@ -36,6 +36,8 @@
 
 ### Fixed
 
+- Avoid full-prefix tokenization when automatically pairing quotes and brackets in large scripts.
+
 - Reduce line-number allocation and scrolling overhead in large scripts.
 
 - Reduce repeated line-ending conversion work while editing large scripts.

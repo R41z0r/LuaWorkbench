@@ -852,7 +852,9 @@ function Editor:Attach(input)
    end
   end
   if not closing then return end
-  local tokens = self:Tokenize(source:sub(1, cursor))
+  -- Only the token at the caret is needed. Preserve prefix-only semantics for
+  -- unfinished strings/delimiters while reusing safe lexical checkpoints.
+  local tokens = self:ViewportTokens(source:sub(1, cursor), cursor, cursor)
   local last = tokens[#tokens]
   if last and (last.kind == 'comment' or (last.kind == 'string' and last.start ~= cursor)) then return end
   local nextChar = source:sub(cursor + 1, cursor + 1)
