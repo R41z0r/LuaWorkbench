@@ -50,7 +50,7 @@ function A:Context(source, cursor)
    if cursor < token.finish or token.closed ~= true then return end
   end
  end
- local prefix = source:sub(1, cursor):match('([%a_][%w_%.]*)$') or ''
+ local prefix = source:sub(1, cursor):match('([%a_][%w_%.:]*)$') or ''
  local previous = source:sub(cursor - #prefix, cursor - #prefix)
  if previous == ':' or previous == '.' then return end
  return { source=source, cursor=cursor, prefix=prefix, start=cursor-#prefix, analysis=analysis, visible=self:Visible(analysis, cursor) }
@@ -66,6 +66,24 @@ function A:Alias(context, name)
  return namespace or nil
 end
 
+-- Read only values established before the caret; aliases share table identity.
+function A:Value(context, path)
+ local root = path:match('^[%a_][%w_]*')
+ local definition = root and context.visible[root]
+ local value
+ for _,entry in ipairs(definition and definition.completionValues or {}) do
+  if entry.position0 <= context.cursor then value=entry.value end
+ end
+ if value and value.completionInvalidated0 and value.completionInvalidated0 <= context.cursor then return end
+ for name in path:sub(root and #root+1 or 1):gmatch('[%.:]([%a_][%w_]*)') do
+  local history=value and value.completionMembers and value.completionMembers[name]
+  value=nil
+  for _,entry in ipairs(history or {}) do if entry.position0 <= context.cursor then value=entry.value end end
+ end
+ if value and value.completionInvalidated0 and value.completionInvalidated0 <= context.cursor then return end
+ return value or nil
+end
+
 function A:Suggest(context, manual)
  local prefix, found = context.prefix, {}
  if prefix == '' and not manual then return found end
@@ -73,7 +91,19 @@ function A:Suggest(context, manual)
  local function add(name, kind)
   if name:sub(1, #prefix) == prefix and name ~= prefix then found[#found + 1] = { name=name, kind=kind } end
  end
- local namespace = prefix:match('^([%w_]+)%.')
+ local path, separator = prefix:match('^(.*)([%.:])[%w_]*$')
+ if path then
+  local owner=self:Value(context,path)
+  for name,history in pairs(owner and owner.completionMembers or {}) do
+   local value
+   for _,entry in ipairs(history) do if entry.position0 <= context.cursor then value=entry.value end end
+   if value and (separator ~= ':' or value.parameters) then
+    add(path..separator..name,value.parameters and 'functionName' or 'identifier')
+   end
+  end
+  table.sort(found,function(a,b) return a.name<b.name end)
+ end
+ local namespace = prefix:match('^([%w_]+)[%.:]')
  local alias = namespace and self:Alias(context,namespace)
  local lookup = alias and (alias..prefix:sub(#namespace+1)) or prefix
  if not namespace then
@@ -109,7 +139,7 @@ function A:Signature(context)
      local index = #tokens
      if tokens[index] and tokens[index].text:match('^[%a_][%w_]*$') then
       name = tokens[index].text; index = index - 1
-      while tokens[index] and tokens[index].text == '.' and tokens[index-1] do name = tokens[index-1].text .. '.' .. name; index = index-2 end
+      while tokens[index] and (tokens[index].text == '.' or tokens[index].text == ':') and tokens[index-1] do name = tokens[index-1].text .. tokens[index].text .. name; index = index-2 end
       if tokens[index] and (tokens[index].text == ':' or tokens[index].text == 'function') then name = '' end
      end
     end
@@ -121,6 +151,17 @@ function A:Signature(context)
  end
  for index = #stack, 1, -1 do
   local call = stack[index]
+  local own=self:Value(context,call.name)
+  if own and own.parameters then
+   local args={}
+   if own.method then args[1]='self' end
+   for _,name in ipairs(own.parameters) do args[#args+1]=name end
+   if call.name:find(':',1,true) then table.remove(args,1) end
+   for n,name in ipairs(args) do
+    args[n]='|c'..E:Color(n==call.argument and 'functionName' or 'parameter')..name..'|r'
+   end
+   return call.name..'('..table.concat(args,', ')..')'
+  end
   local root = call.name:match('^[%w_]+')
   local alias = root and self:Alias(context,root)
   local canonical = alias and (alias..call.name:sub(#root+1)) or call.name
@@ -143,6 +184,7 @@ function A:RestoreArrows()
 end
 
 function A:Hide()
+ self.keySource, self.keyCursor = nil, nil
  self:RestoreArrows()
  if self.panel then self.panel:Hide() end
  self.context, self.items, self.input, self.pending = nil, nil, nil, nil
@@ -199,8 +241,21 @@ function A:Update(input, manual)
  self:Draw()
 end
 
+function A:RestoreCursor(input)
+ local state=input.queryEditor
+ if self.input ~= input or self.keyCursor == nil or not state or state.busy
+  or input:GetText() ~= self.keySource then return end
+ if input.editBox:GetCursorPosition() ~= self.keyCursor then
+  state.busy=true
+  input.editBox:SetCursorPosition(self.keyCursor)
+  state.busy=nil
+  state.actionCursor=self.keyCursor
+ end
+end
+
 function A:Tick(input, elapsed)
  if not self:Enabled(input) or not input.editBox:HasFocus() then if self.input == input then self:Hide() end; return end
+ self:RestoreCursor(input)
  local source, cursor = input:GetText(), input.editBox:GetCursorPosition()
  if source ~= self.lastSource or cursor ~= self.lastCursor or addon.Workspace.current ~= self.lastScript then
   self.lastSource, self.lastCursor, self.lastScript = source, cursor, addon.Workspace.current
@@ -240,6 +295,7 @@ function A:Arrow(input, key, origin)
   origin = origin or 'native'
   -- Some EditBoxes dispatch both callbacks for one press; consume the second.
   if self.arrowKey == key and self.arrowOrigin and self.arrowOrigin ~= origin then
+   self:RestoreCursor(input)
    self.arrowKey, self.arrowOrigin = nil, nil
    return true
   end

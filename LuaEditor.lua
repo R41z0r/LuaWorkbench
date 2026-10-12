@@ -446,6 +446,7 @@ function Editor:Attach(input)
  wrap('OnKeyUp', function(original, ...)
   if addon.EditorActions then addon.EditorActions:KeyUp(input) end
   if addon.Autocomplete then
+   addon.Autocomplete:RestoreCursor(input)
    addon.Autocomplete.keySource, addon.Autocomplete.keyCursor = nil, nil
    addon.Autocomplete.arrowKey, addon.Autocomplete.arrowOrigin = nil, nil
   end
@@ -589,6 +590,7 @@ function Editor:Attach(input)
  end)
  if addon.EditorActions then addon.EditorActions:Track(input) end
  wrap('OnMouseDown', function(original, frame, button)
+  if addon.Autocomplete and addon.Autocomplete.input == input then addon.Autocomplete:Hide() end
   if button == 'LeftButton' then
    state.lineBlock = nil
    local now = _G.GetTime and _G.GetTime() or 0

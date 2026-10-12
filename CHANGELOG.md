@@ -4,6 +4,8 @@
 
 ### Added
 
+- Complete members of local tables and show parameter names for locally defined functions and methods.
+
 - Complete documented API members and show parameter hints through local namespace aliases such as `local CA = C_AddOns`.
 
 - Optional code completion for documented Blizzard APIs, local variables, parameters and script functions, with keyboard selection, Enter/Tab acceptance and API parameter hints. Suggestions respect local namespace shadowing and implicit method parameters.

@@ -34,6 +34,7 @@ function Parser:lookup(name)
 end
 function Parser:declare(token, kind, value)
  local definition = { name = token.text, position0 = token.start - 1, kind = kind or 'localVariable', value = value, scope=self.current, visible0=(self.items[self.index-1] or token).finish, scopeID=self.current.id, functionDepth=self.functionDepth or 0 }
+ definition.completionValues = {{position0=definition.visible0, value=value or false}}
  definition.apiAliases = {{position0=definition.visible0, namespace=value and value.apiNamespace or false}}
  self.current.names[token.text] = definition
  token.definition, token.semanticKind = definition, definition.kind
@@ -51,7 +52,16 @@ local function literal(token)
  local quote = token.text:sub(1, 1)
  if (quote == '"' or quote == "'") and not token.text:find('\\', 1, true) then return token.text:sub(2, -2) end
 end
-function Parser:body(method)
+function Parser:completionMember(owner, token, value, valid)
+ if not owner or not owner.members or not identifier(token) then return end
+ owner.completionMembers = owner.completionMembers or {}
+ local history = owner.completionMembers[token.text] or {}
+ owner.completionMembers[token.text] = history
+ history[#history+1] = {position0=(self.items[self.index-1] or token).finish,
+  value=valid and not (value and value.absent) and (value or {}) or false}
+end
+function Parser:body(method, value)
+ if value then value.parameters, value.method = {}, method or false end
  self.functionDepth=(self.functionDepth or 0)+1
  self:scope()
  self:expect('(')
@@ -65,6 +75,7 @@ function Parser:body(method)
  while self:peek().text ~= ')' and self:peek().kind ~= 'eof' do
   local token = self:take()
   if identifier(token) then self:declare(token, 'parameter') end
+  if value and (identifier(token) or token.text == '...') then value.parameters[#value.parameters+1]=token.text end
   if not self:accept(',') then break end
  end
  self:expect(')'); self:chunk({ ['end']=true }); self:expect('end'); self:leave()
@@ -81,7 +92,7 @@ function Parser:expression(minimum)
   if not token.definition and not self.result.globals[token.text] and token.text:match('^C_[%w_]+$') then
    value = {apiNamespace=token.text}
   end
- elseif token.text == 'function' then value = { functionToken=token }; self:body()
+ elseif token.text == 'function' then value = { functionToken=token }; self:body(false,value)
  elseif token.text == '{' then
   value = { members={} }
   while self:peek().text ~= '}' and self:peek().kind ~= 'eof' do
@@ -90,12 +101,14 @@ function Parser:expression(minimum)
     self:take(); self:take()
     local field = self:expression(0)
     key.semanticKind = field and field.functionToken and 'functionName' or nil
+    self:completionMember(value,key,field,true)
     value.members[key.text] = { name=key.text, position0=key.start-1, kind=key.semanticKind or 'identifier' }
    elseif self:accept('[') then self:expression(0); self:expect(']'); self:accept('='); self:expression(0)
    else self:expression(0) end
    if not self:accept(',') and not self:accept(';') then break end
   end
   self:expect('}')
+ elseif token.text == 'nil' then value = {absent=true}
  elseif token.text == '(' then value = self:expression(0); self:expect(')')
  elseif token.text == '-' or token.text == '#' or token.text == 'not' then self:expression(7)
  elseif token.kind ~= 'number' and token.kind ~= 'string' and token.kind ~= 'literal' and token.text ~= '...' then self.result.incomplete=true
@@ -148,7 +161,7 @@ function Parser:statement()
  if text == 'local' then
   self:take()
   if self:accept('function') then
-   local name = self:take(); self:declare(name, 'functionName'); self:body()
+   local name = self:take(); local value={functionToken=name}; self:declare(name, 'functionName',value); self:body(false,value)
   else
    local names = { self:take() }
    while self:accept(',') do names[#names+1] = self:take() end
@@ -174,7 +187,18 @@ function Parser:statement()
    if name.definition and name.definition.kind ~= 'parameter' then name.definition.kind='functionName' end
    if not name.definition then self.result.globals[name.text] = self.result.globals[name.text] or {}; table.insert(self.result.globals[name.text], { name=name.text, position0=name.start-1, kind='functionName' }) end
   end
-  self:body(method)
+  local callable = {functionToken=member or name}
+  self:body(method,callable)
+  if member and pathDepth == 1 then
+   self:completionMember(value,member,callable,name.definition and name.definition.scopeID == self.current.id)
+  elseif not member and name.definition then
+   local definition=name.definition
+   definition.completionValues=definition.completionValues or {}
+   definition.completionValues[#definition.completionValues+1]={position0=name.finish,value=callable}
+   definition.value=callable
+   definition.apiAliases=definition.apiAliases or {}
+   definition.apiAliases[#definition.apiAliases+1]={position0=name.finish,namespace=false}
+  end
  elseif text == 'if' then
   self:take(); self:expression(0); self:expect('then'); self:scope(); self:chunk({ ['elseif']=true, ['else']=true, ['end']=true }); self:leave()
   while self:accept('elseif') do self:expression(0); self:expect('then'); self:scope(); self:chunk({ ['elseif']=true, ['else']=true, ['end']=true }); self:leave() end
@@ -214,6 +238,13 @@ function Parser:statement()
    local values=self:expressions()
    for i, target in ipairs(targets) do
     local first, member, value=target.token, target.member, values[i]
+    if target.computed and first.definition and first.definition.value then
+     local owner=first.definition.value
+     owner.completionInvalidated0=owner.completionInvalidated0 or (self.items[self.index-1] or first).finish
+    end
+    if member and first.definition then
+     self:completionMember(first.definition.value,member,value,first.definition.scopeID == self.current.id)
+    end
     if member and self.current.parent and first.definition and first.definition.value then first.definition.value.dynamic=true
     elseif target.computed and first.definition and first.definition.value then first.definition.value.dynamic=true
     elseif member and not self.current.parent and first.definition and first.definition.value and first.definition.value.members then
@@ -225,6 +256,8 @@ function Parser:statement()
       if reference.captured then reference.token.import=nil; self.result.imports[reference.token.start-1]=nil end
      end
      definition.value=definition.scopeID == self.current.id and value or nil
+     definition.completionValues=definition.completionValues or {}
+     definition.completionValues[#definition.completionValues+1]={position0=(self.items[self.index-1] or first).finish,value=definition.value or false}
      definition.apiAliases = definition.apiAliases or {}
      definition.apiAliases[#definition.apiAliases+1] = {position0=(self.items[self.index-1] or first).finish,
       namespace=definition.value and definition.value.apiNamespace or false}
