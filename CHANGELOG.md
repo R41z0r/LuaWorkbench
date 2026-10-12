@@ -4,11 +4,11 @@
 
 ### Added
 
-- Cut the current line with the native clipboard shortcut when no text is selected, including repeated cuts and empty final lines.
+- Copy or cut the current line with native clipboard shortcuts when no text is selected, including repeated cuts and empty final lines. Paste copied lines above the current line; returning from another copy field restores ordinary paste behavior.
 
 - Platform-aware editor shortcuts and help: Command on macOS for saving, searching and running scripts; Option for line actions and formatting.
 
-- Move the current line or selected line blocks with Alt+Up/Down and duplicate them with Alt+Shift+Up/Down, including blocks selected with the mouse.
+- Move the current line or selected line blocks with Alt+Up/Down and duplicate them with Alt+Shift+Up/Down, including blocks selected with the mouse and trailing empty lines at the end of the document.
 
 ## [1.1.0] - 2026-10-11
 

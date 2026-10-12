@@ -299,6 +299,7 @@ function Editor:SetSource(input, source, cursor)
  if self:IsReadOnly(input) and not (addon.Workspace and addon.Workspace.selecting) then return false end
  local state = input.queryEditor
  if not state then return end
+ state.lineBlock = nil
  state.selectionStart, state.selectionEnd, state.selectionUnknown = nil, nil, nil
  state.busy = true
  input.editBox:SetText(source)
@@ -378,6 +379,7 @@ function Editor:Attach(input)
    state.busy, state.keyEdit, state.formatEdit = nil, nil, nil
    return
   end
+  state.lineBlock = nil
   if user and addon.EditorActions then
    local normalized, cursor = addon.EditorActions:Text(input, text)
    if normalized then state.busy = true; frame:SetText(normalized); frame:SetCursorPosition(cursor); state.busy = nil; text = normalized end
@@ -470,10 +472,12 @@ function Editor:Attach(input)
   else frame:Insert(string.rep(' ', self:IndentWidth())) end
  end)
  wrap('OnEditFocusLost', function(original, ...)
+  if addon.EditorActions and input == addon.Query.Console.input then addon.EditorActions.lineClipboard = nil end
   state.formatEdit = nil
   if original then original(...) end
  end)
  wrap('OnHide', function(original, ...)
+  if addon.EditorActions and input == addon.Query.Console.input then addon.EditorActions.lineClipboard = nil end
   state.formatEdit = nil
   if original then original(...) end
  end)
@@ -512,6 +516,7 @@ function Editor:Attach(input)
  if addon.EditorActions then addon.EditorActions:Track(input) end
  wrap('OnMouseDown', function(original, frame, button)
   if button == 'LeftButton' then
+   state.lineBlock = nil
    local now = _G.GetTime and _G.GetTime() or 0
    state.doubleClick = state.lastMouseDown and now - state.lastMouseDown < 0.35
    state.lastMouseDown = now

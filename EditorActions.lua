@@ -9,7 +9,7 @@ function A:Bounds(source, cursor)
  return first, last
 end
 
-function A:Move(source, cursor, direction, duplicate, selectionStart, selectionEnd)
+function A:Move(source, cursor, direction, duplicate, selectionStart, selectionEnd, block)
  local first, last = self:Bounds(source, cursor)
  if selectionStart and selectionEnd and selectionStart ~= selectionEnd then
   local low, high = math.min(selectionStart, selectionEnd), math.max(selectionStart, selectionEnd)
@@ -17,7 +17,12 @@ function A:Move(source, cursor, direction, duplicate, selectionStart, selectionE
   local _, blockEnd = self:Bounds(source, high-1)
   last = blockEnd
  end
+ if block then first, last = block.first, block.last end
  local hasNewline = last > first and source:sub(last, last) == '\n'
+ if block then hasNewline = block.separated end
+ local function bounds(at, separated)
+  return {first=at, last=at+(last-first)-(hasNewline and 1 or 0)+(separated and 1 or 0), separated=separated}
+ end
  local line = source:sub(first+1, hasNewline and last-1 or last)
  local column = cursor-first
  if duplicate then
@@ -25,19 +30,19 @@ function A:Move(source, cursor, direction, duplicate, selectionStart, selectionE
   local text = direction < 0 and (line .. '\n') or (hasNewline and (line .. '\n') or ('\n' .. line))
   local result = source:sub(1, at) .. text .. source:sub(at+1)
   local position = direction < 0 and (first+column) or (last+(hasNewline and 0 or 1)+column)
-  return result, position
+  return result, position, bounds(direction < 0 and first or (last+(hasNewline and 0 or 1)), direction < 0 or hasNewline)
  end
  if direction < 0 then
-  if first == 0 then return source, cursor end
+  if first == 0 then return source, cursor, bounds(first,hasNewline) end
   local previous = (source:sub(1, first-1):match('.*\n()') or 1)-1
   local above = source:sub(previous+1, first-1)
-  return source:sub(1, previous) .. line .. '\n' .. above .. (hasNewline and '\n' or '') .. source:sub(last+1), previous+column
+  return source:sub(1, previous) .. line .. '\n' .. above .. (hasNewline and '\n' or '') .. source:sub(last+1), previous+column, bounds(previous,true)
  end
- if not hasNewline then return source, cursor end
+ if not hasNewline then return source, cursor, bounds(first,hasNewline) end
  local nextEnd = source:find('\n', last+1, true) or #source
  local nextNewline = nextEnd > last and source:sub(nextEnd,nextEnd)=='\n'
  local below = source:sub(last+1, nextNewline and nextEnd-1 or nextEnd)
- return source:sub(1,first) .. below .. '\n' .. line .. (nextNewline and '\n' or '') .. source:sub(nextEnd+1), first+#below+1+column
+ return source:sub(1,first) .. below .. '\n' .. line .. (nextNewline and '\n' or '') .. source:sub(nextEnd+1), first+#below+1+column, bounds(first+#below+1,nextNewline)
 end
 
 function A:Selection(input)
@@ -49,6 +54,7 @@ function A:Cursor(input)
  local state, box = input.queryEditor, input.editBox
  if state.busy then return end
  local cursor = box:GetCursorPosition()
+ if cursor ~= state.actionCursor and not state.actionLock then state.lineBlock = nil end
  if cursor == state.actionCursor and not state.mouseSelecting then return end
  if state.mouseSelecting then
   -- Mouse-down runs before the native EditBox places its cursor at the click.
@@ -75,13 +81,20 @@ function A:Key(input, key)
  if alt and not ctrl and (key=='UP' or key=='DOWN') and not E:IsReadOnly(input) then
   if state.selectionUnknown then return end
   local first, last = state.selectionStart, state.selectionEnd
-  local text, position = self:Move(source,cursor,key=='UP' and -1 or 1,shift,first,last)
+  local block = state.lineBlock
+  if block and (block.source ~= source or block.actualCursor ~= cursor or block.selectionStart ~= first or block.selectionEnd ~= last) then block = nil end
+  if block then first, last, cursor = block.logicalStart, block.logicalEnd, block.logicalCursor end
+  local text, position, moved = self:Move(source,cursor,key=='UP' and -1 or 1,shift,first,last,block)
   E:SetSource(input,text,position)
   state.actionLock, state.actionCursor = math.min(position,#text), math.min(position,#text)
   if first and last and first ~= last then
    local delta = position-cursor
    state.selectionStart, state.selectionEnd = math.min(first+delta,#text), math.min(last+delta,#text)
    box:HighlightText(math.min(math.min(first,last)+delta,#text),math.min(math.max(first,last)+delta,#text))
+   moved.source, moved.actualCursor = text, state.actionCursor
+   moved.selectionStart, moved.selectionEnd = state.selectionStart, state.selectionEnd
+   moved.logicalStart, moved.logicalEnd, moved.logicalCursor = first+delta, last+delta, position
+   state.lineBlock = moved
   end
   return true
  end
@@ -89,9 +102,14 @@ function A:Key(input, key)
  local nativeModifier = meta or (ctrl and not (_G.IsMacClient and _G.IsMacClient()))
  if not nativeModifier or alt then return end
  if key=='A' then state.selectionStart, state.selectionEnd=0,#source; return end
- if key=='X' then
+ if key=='C' or key=='X' then
   self.lineClipboard = nil
-  if self:Selection(input) or (key=='X' and E:IsReadOnly(input)) then return end
+  if key=='X' and E:IsReadOnly(input) then return end
+  if self:Selection(input) then
+   -- Track native selection cuts so the consumed selection is cleared on key-up.
+   if key=='X' then state.clipboard = {key=key, source=source, selection=true} end
+   return
+  end
   local first,last = self:Bounds(source,cursor)
   local text = source:sub(first+1,last)
   if text=='' then
@@ -106,26 +124,49 @@ function A:Key(input, key)
   self.lineClipboard = text
   state.clipboard = {key=key, source=source, cursor=cursor, first=first,last=last}
   box:HighlightText(first,last)
-
+ elseif key=='V' and not E:IsReadOnly(input) then
+  state.nativePaste = true
+  state.paste = {source=source,cursor=cursor,line=not self:Selection(input) and self.lineClipboard or nil}
  end
 end
 
 function A:Text(input, text)
  local state = input.queryEditor
+ local paste = state.paste
+ state.paste = nil
+ if paste then
+  local inserted = #text - #paste.source
+  local payload = inserted >= 0 and text:sub(paste.cursor+1,paste.cursor+inserted)
+  if paste.line and payload == paste.line and text == paste.source:sub(1,paste.cursor)..payload..paste.source:sub(paste.cursor+1) then
+   local first = self:Bounds(paste.source,paste.cursor)
+   payload = payload:gsub('\r\n','\n'):gsub('\r','\n')
+   if payload:sub(-1) ~= '\n' then payload=payload..'\n' end
+   return paste.source:sub(1,first)..payload..paste.source:sub(first+1), paste.cursor+#payload
+  end
+ end
+ if text:find('\r',1,true) then
+  local cursor=input.editBox:GetCursorPosition()
+  return text:gsub('\r\n','\n'):gsub('\r','\n'), #(text:sub(1,cursor):gsub('\r\n','\n'):gsub('\r','\n'))
+ end
  local clip=state.clipboard
- if clip and clip.key=='X' and clip.first>0 and clip.last==#clip.source and clip.source:sub(-1)~='\n'
+ if clip and clip.key=='X' and not clip.selection and clip.first>0 and clip.last==#clip.source and clip.source:sub(-1)~='\n'
   and text==clip.source:sub(1,clip.first) then return text:sub(1,-2), math.max(0,clip.first-1) end
 end
 
 function A:KeyUp(input)
  local state, box = input.queryEditor, input.editBox
  local clip=state.clipboard
- state.clipboard, state.paste, state.actionLock = nil,nil,nil
- if clip and clip.key=='X' and input:GetText()~=clip.source then
+ local pasted = state.nativePaste
+ state.clipboard, state.paste, state.actionLock, state.nativePaste = nil,nil,nil,nil
+ if clip and clip.key=='C' and input:GetText()==clip.source then
+  box:HighlightText(0,0); box:SetCursorPosition(clip.cursor)
+ elseif clip and clip.key=='X' and input:GetText()~=clip.source then
   -- Native cut consumed the prepared selection; it is no longer a user selection.
   box:HighlightText(0,0)
  end
- if clip and input:GetText()~=clip.source then
+ -- Native paste finishes with a caret, even when it replaces identical text.
+ if pasted then box:HighlightText(0,0) end
+ if pasted or (clip and (clip.key=='C' or input:GetText()~=clip.source)) then
   state.selectionStart, state.selectionEnd, state.selectionUnknown = nil, nil, nil
   state.actionCursor = box:GetCursorPosition()
  end
@@ -136,6 +177,7 @@ function A:Track(input)
  if state.selectionHook or not _G.hooksecurefunc then return end
  state.selectionHook=true
  _G.hooksecurefunc(box,'HighlightText',function(_,first,last)
+  state.lineBlock = nil
   state.selectionStart,state.selectionEnd=first or 0,last and last>=0 and last or #box:GetText()
   state.selectionUnknown=nil
  end)
