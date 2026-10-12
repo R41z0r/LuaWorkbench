@@ -36,6 +36,8 @@
 
 ### Fixed
 
+- Avoid rebuilding the entire colored script while line layout catches up with typing.
+
 - Keep large scripts fully visible and reduce typing overhead by coloring the visible excerpt and reusing unchanged line measurements.
 
 - Keep repeated modified Backspace working after replacing or deleting selected text.

@@ -308,6 +308,13 @@ function Editor:Paint(input)
  local left, right, top = box:GetTextInsets()
  local width, spacing, source = math.max(1, box:GetWidth() - left - right), box:GetSpacing(), box:GetText()
  local first, last, offset = self:VisibleRange(input, source)
+ -- Native cursor/layout callbacks can precede the source-change notification.
+ -- Wait for that notification to refresh line geometry instead of rendering
+ -- the complete document with missing viewport bounds.
+ if input.queryLineNumbers and not first then
+  state.pending = true
+  return
+ end
  offset = offset or 0
  if state.paintFont ~= font or state.paintSize ~= size or state.paintFlags ~= flags then
   overlay:SetFont(font, size, flags)
