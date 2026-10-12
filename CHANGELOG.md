@@ -36,6 +36,8 @@
 
 ### Fixed
 
+- Show automatic completion sooner in large scripts by reusing the context before the typed name.
+
 - Preserve colors of unchanged symbols while typing instead of flashing between lexical and semantic highlighting.
 
 - Keep typing responsive in large scripts by updating lexical colors immediately and deferring semantic analysis until a short typing pause.

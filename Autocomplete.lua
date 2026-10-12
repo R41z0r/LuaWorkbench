@@ -52,23 +52,30 @@ function A:Visible(analysis, cursor)
  return names
 end
 
-function A:Context(source, cursor)
+function A:Context(source, cursor, quick)
  if #source > 100000 then return end
- local analysis = addon.Analysis:Get(source)
+ local prefix = source:sub(1, cursor):match('([%a_][%w_%.:]*)$') or ''
+ -- Automatic completion needs declarations before the active name, not the
+ -- unchanged document after it. The prefix analysis stays cached as it grows.
+ local analysisSource, analysisCursor = source, cursor
+ if quick and #source > 20000 then
+  analysisCursor = cursor - #prefix
+  analysisSource = source:sub(1, analysisCursor)
+ end
+ local analysis = addon.Analysis:Get(analysisSource)
  if analysis.limited then return end
  local inString=false
  for _, token in ipairs(analysis.tokens) do
-  if cursor >= token.start and cursor <= token.finish and (token.kind == 'comment' or token.kind == 'string') then
-   if cursor < token.finish or token.closed ~= true then
+  if analysisCursor >= token.start and analysisCursor <= token.finish and (token.kind == 'comment' or token.kind == 'string') then
+   if analysisCursor < token.finish or token.closed ~= true then
     if token.kind == 'comment' then return end
     inString=true
    end
   end
  end
- local prefix = source:sub(1, cursor):match('([%a_][%w_%.:]*)$') or ''
  local previous = source:sub(cursor - #prefix, cursor - #prefix)
  if not inString and (previous == ':' or previous == '.') then return end
- return { source=source, cursor=cursor, prefix=prefix, start=cursor-#prefix, analysis=analysis, visible=self:Visible(analysis, cursor), inString=inString }
+ return { source=source, cursor=cursor, prefix=prefix, start=cursor-#prefix, analysis=analysis, visible=self:Visible(analysis, analysisCursor), inString=inString }
 end
 
 function A:Alias(context, name)
@@ -266,7 +273,7 @@ end
 function A:Update(input, manual, signatureOnly)
  if not self:Enabled(input) or not input.editBox:HasFocus() then self:Hide(); return end
  if not addon.APIHelp.ready and not self.loadTried then self.loadTried = true; addon.APIHelp:Load(true) end
- local context = self:Context(input:GetText(), input.editBox:GetCursorPosition())
+ local context = self:Context(input:GetText(), input.editBox:GetCursorPosition(), not manual)
  if not context then self:Hide(); return end
  self.lastSource, self.lastCursor, self.lastScript = context.source, context.cursor, addon.Workspace.current
  self.pending = nil
@@ -313,7 +320,7 @@ function A:Tick(input, elapsed)
  end
  if self.pending then
   self.pending = self.pending + elapsed
-  if self.pending >= (#source > 20000 and 0.45 or 0.15) then self.pending = nil; self:Update(input, false, not self.pendingSuggestions) end
+  if self.pending >= (#source > 20000 and 0.12 or 0.15) then self.pending = nil; self:Update(input, false, not self.pendingSuggestions) end
  end
 end
 
