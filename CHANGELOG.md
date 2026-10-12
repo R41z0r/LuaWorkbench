@@ -36,6 +36,8 @@
 
 ### Fixed
 
+- Reduce cursor-position update overhead when editing near the end of large scripts.
+
 - Update open completion suggestions without flickering while refining a name, retaining the selected match when possible.
 
 - Show automatic completion sooner in large scripts by reusing the context before the typed name.

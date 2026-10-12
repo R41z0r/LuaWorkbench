@@ -116,9 +116,22 @@ function Console:UndoClear()
 end
 
 function Console:GetLinePosition(source, cursor)
-	local _, before = source:sub(1, cursor):gsub("\n", "")
-	local _, total = source:gsub("\n", "")
-	return before + 1, total + 1
+ local cache = self.linePositionCache
+ if not cache or cache.source ~= source then
+  cache = {source=source, starts={0}}
+  local position = source:find("\n", 1, true)
+  while position do
+   cache.starts[#cache.starts+1] = position
+   position = source:find("\n", position+1, true)
+  end
+  self.linePositionCache = cache
+ end
+ local low, high = 1, #cache.starts
+ while low < high do
+  local middle = math.floor((low+high+1)/2)
+  if cache.starts[middle] <= cursor then low=middle else high=middle-1 end
+ end
+ return low, #cache.starts, cache.starts[low]
 end
 
 function Console:UpdateEditorLabel()
@@ -127,8 +140,8 @@ function Console:UpdateEditorLabel()
 	local position = ""
 	if self.input.editBox then
 		local cursor = self.input.editBox:GetCursorPosition()
-  local current = self:GetLinePosition(self.source or "", cursor)
-  local prefix = (self.source or ""):sub(1, cursor):match("([^\n]*)$") or ""
+  local current, _, lineStart = self:GetLinePosition(self.source or "", cursor)
+  local prefix = (self.source or ""):sub(lineStart+1, cursor)
   local _, characters = prefix:gsub("[^\128-\191]", "")
   position = " - " .. string.format(L["cursorPosition"], current, characters + 1)
 	end
