@@ -36,6 +36,8 @@
 
 ### Fixed
 
+- Keep syntax colors throughout very large scripts and avoid automatic full-document analysis while editing them.
+
 - Reuse unchanged syntax tokens to reduce typing overhead near the end of large scripts.
 
 - Reduce cursor-position update overhead when editing near the end of large scripts.

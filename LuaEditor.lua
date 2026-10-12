@@ -41,7 +41,7 @@ function Editor:IndentWidth()
  return addon.Workspace and addon.Workspace.db and addon.Workspace.db.options.indentWidth or 4
 end
 
-function Editor:ScanTokens(source, maxTokens, firstSource, lastSource, scanStart)
+function Editor:ScanTokens(source, maxTokens, firstSource, lastSource, scanStart, checkpoints)
  local tokens, index, length, count = {}, scanStart or 1, #source, 0
  local function add(kind, finish, closed)
   count = count + 1
@@ -49,6 +49,9 @@ function Editor:ScanTokens(source, maxTokens, firstSource, lastSource, scanStart
    tokens[#tokens + 1] = { kind = kind, text = source:sub(index, finish), start = index, finish = finish, closed = closed }
   end
   index = finish + 1
+  if checkpoints and kind == 'newline' and index-(checkpoints[#checkpoints] or 1) >= 4096 then
+   checkpoints[#checkpoints+1]=index
+  end
  end
  local function ending(pattern, offset)
   local first, last = source:find(pattern, offset or index)
@@ -108,6 +111,31 @@ function Editor:ScanTokens(source, maxTokens, firstSource, lastSource, scanStart
   end
  end
  return tokens
+end
+
+-- Newline token boundaries carry no string/comment state. Sparse checkpoints let
+-- viewport coloring resume safely without retaining a token for the whole file.
+function Editor:ViewportTokens(source, firstSource, lastSource)
+ local cache=self.viewportLexicalCache
+ if not cache then cache={source='', points={1}};self.viewportLexicalCache=cache end
+ local points=cache.points
+ if cache.source ~= source then
+  local prefix,high=0,math.min(#cache.source,#source)
+  while prefix < high do
+   local middle=math.floor((prefix+high+1)/2)
+   if cache.source:sub(1,middle)==source:sub(1,middle) then prefix=middle else high=middle-1 end
+  end
+  while #points>1 and points[#points]>prefix do points[#points]=nil end
+  cache.source=source
+ end
+ local low,high=1,#points
+ while low<high do
+  local middle=math.floor((low+high+1)/2)
+  if points[middle]<=firstSource then low=middle else high=middle-1 end
+ end
+ -- Keep checkpoints ordered when revisiting an earlier viewport.
+ local additions=low==#points and points or nil
+ return self:ScanTokens(source,nil,firstSource,lastSource,points[low],additions)
 end
 
 -- Only lexical data is shared. Analysis owns and may annotate its returned tokens.
@@ -211,7 +239,11 @@ function Editor:Render(source, firstSource, lastSource, deferred)
   if deferred then analysis = addon.Analysis.cache[source]
   else analysis = addon.Analysis:Get(source) end
  end
- local tokens = analysis and analysis.tokens or self:Tokenize(source, 50000, firstSource, lastSource)
+ if analysis and analysis.limited then analysis=nil end
+ local viewportOnly = firstSource and lastSource and #source > 100000
+ if viewportOnly then analysis=nil end
+ local tokens = viewportOnly and self:ViewportTokens(source, firstSource, lastSource)
+  or (analysis and analysis.tokens or self:Tokenize(source, nil, firstSource, lastSource))
  local apiPaths = analysis and addon.APIHelp and addon.APIHelp:Paths(source) or {}
  for _, token in ipairs(tokens) do
   if (not firstSource or token.finish >= firstSource) and (not lastSource or token.start <= lastSource) then
@@ -469,7 +501,7 @@ end
 function Editor:UpdateAnalysis(input, elapsed)
  local state = input.queryEditor
  local source = input:GetText()
- if #source <= 20000 or #source > 200000 or not addon.Analysis then return end
+ if #source <= 20000 or #source > 100000 or not addon.Analysis then return end
  if state.analysisSource ~= source then
   state.analysisSource, state.analysisElapsed = source, 0
  else state.analysisElapsed = (state.analysisElapsed or 0) + elapsed end
