@@ -295,10 +295,40 @@ function Editor:IsReadOnly(input)
   and workspace and workspace.db and workspace.db.options.debugReadOnly ~= false or false
 end
 
-function Editor:SetSource(input, source, cursor)
+-- Track generated delimiters through edits without treating existing source as auto-paired.
+function Editor:UpdateAutoPairs(input, source, hint)
+ local state=input.queryEditor
+ local previous=state.autoPairSource
+ state.autoPairSource=source
+ if not previous or previous == source or not state.autoPairs then return end
+ local first, oldEnd, newEnd=0,#previous,#source
+ local edit=hint or state.keyEdit
+ local added=#source-#previous
+ if edit and edit.source == previous and added>0
+  and source:sub(1,edit.cursor) == previous:sub(1,edit.cursor)
+  and source:sub(edit.cursor+added+1) == previous:sub(edit.cursor+1) then
+  first,oldEnd,newEnd=edit.cursor,edit.cursor,edit.cursor+added
+ else
+  while first<oldEnd and first<newEnd and previous:byte(first+1)==source:byte(first+1) do first=first+1 end
+  while oldEnd>first and newEnd>first and previous:byte(oldEnd)==source:byte(newEnd) do oldEnd=oldEnd-1;newEnd=newEnd-1 end
+ end
+ for index=#state.autoPairs,1,-1 do
+  local pair=state.autoPairs[index]
+  if (pair.open>=first and pair.open<oldEnd) or (pair.close>=first and pair.close<oldEnd) then
+   table.remove(state.autoPairs,index)
+  else
+   if pair.open>=oldEnd then pair.open=pair.open+newEnd-oldEnd end
+   if pair.close>=oldEnd then pair.close=pair.close+newEnd-oldEnd end
+  end
+ end
+end
+
+function Editor:SetSource(input, source, cursor, preservePairs)
  if self:IsReadOnly(input) and not (addon.Workspace and addon.Workspace.selecting) then return false end
  local state = input.queryEditor
  if not state then return end
+ if preservePairs then self:UpdateAutoPairs(input,source)
+ else state.autoPairs, state.autoPairSource = nil, source end
  state.lineBlock = nil
  state.selectionStart, state.selectionEnd, state.selectionUnknown = nil, nil, nil
  state.busy = true
@@ -398,6 +428,8 @@ function Editor:Attach(input)
     text = indented
    end
   end
+  if input.setting then state.autoPairs, state.autoPairSource=nil,text
+  else self:UpdateAutoPairs(input,text) end
   state.source, state.pending, state.elapsed = text, true, 0
   if original then original(frame, user) end
   state.breakpointEdit = nil
@@ -575,18 +607,34 @@ function Editor:Attach(input)
   if not edit or addon.Workspace.db.options.autoPairs == false then return end
   local pairs = { ['('] = ')', ['['] = ']', ['{'] = '}', ['"'] = '"', ["'"] = "'" }
   local closing = pairs[char]
-  if not closing then return end
   local source, cursor = frame:GetText(), frame:GetCursorPosition()
   -- Only pair a single character inserted by this keypress. Paste callbacks can
   -- arrive after the whole clipboard has already been placed at the cursor.
   if #source ~= #edit.source + #char or source:sub(cursor - #char + 1, cursor) ~= char then return end
   if source:sub(1, cursor - #char) .. source:sub(cursor + 1) ~= edit.source then return end
+  self:UpdateAutoPairs(input,source,edit)
+  for index,pair in ipairs(state.autoPairs or {}) do
+   if pair.close == cursor and pair.char == char then
+    -- Escaped quotes are content, never a request to leave the string.
+    local slashes, position=0,cursor-1
+    while position>0 and source:sub(position,position)=='\\' do slashes=slashes+1;position=position-1 end
+    if (char ~= '"' and char ~= "'") or slashes%2 == 0 then
+     table.remove(state.autoPairs,index)
+     self:SetSource(input,edit.source,cursor,true)
+     return
+    end
+   end
+  end
+  if not closing then return end
   local tokens = self:Tokenize(source:sub(1, cursor))
   local last = tokens[#tokens]
   if last and (last.kind == 'comment' or (last.kind == 'string' and last.start ~= cursor)) then return end
   local nextChar = source:sub(cursor + 1, cursor + 1)
   if nextChar ~= '' and not nextChar:match('[%s%)%]%},;]') then return end
-  self:SetSource(input, source:sub(1, cursor) .. closing .. source:sub(cursor + 1), cursor)
+  self:SetSource(input, source:sub(1, cursor) .. closing .. source:sub(cursor + 1), cursor, true)
+  state.autoPairs=state.autoPairs or {}
+  state.autoPairs[#state.autoPairs+1]={open=cursor-1,close=cursor,char=closing}
+  if #state.autoPairs>128 then table.remove(state.autoPairs,1) end
  end)
  if addon.EditorActions then addon.EditorActions:Track(input) end
  wrap('OnMouseDown', function(original, frame, button)

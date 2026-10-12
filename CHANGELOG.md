@@ -4,6 +4,8 @@
 
 ### Added
 
+- Complete documented enumeration names and their values through `Enum.`.
+
 - Complete members of local tables and show parameter names for locally defined functions and methods.
 
 - Complete documented API members and show parameter hints through local namespace aliases such as `local CA = C_AddOns`.
@@ -17,6 +19,12 @@
 - Move the current line or selected line blocks with Alt+Up/Down and duplicate them with Alt+Shift+Up/Down, including blocks selected with the mouse and trailing empty lines at the end of the document.
 
 ### Changed
+
+- Open automatic completion while editing, without interrupting cursor navigation through existing code; Ctrl+Space still requests suggestions explicitly.
+
+- Keep parameter hints visible while typing arguments, including quoted strings.
+
+- Typing an automatically inserted closing quote or bracket advances over it instead of inserting a duplicate.
 
 - On macOS, Option+Left/Right navigates by word and Command+Left/Right moves to line boundaries and Command+Up/Down to code boundaries; Shift extends the selection.
 

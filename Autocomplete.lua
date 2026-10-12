@@ -10,15 +10,26 @@ end
 function A:Names()
  local api = addon.APIHelp
  if self.revision == api.revision then return self.names end
- local names, seen = {}, {}
+ local names, seen, kinds = {}, {}, {}
  for name in pairs(api.index) do
-  seen[name] = true
+  seen[name], kinds[name] = true, 'blizzardFunction'
   local namespace = name:match('^([%w_]+)%.')
   if namespace then seen[namespace] = true end
  end
+ for name,entry in pairs(api.catalog or {}) do
+  if entry.kind == 'apiEnums' and name:match('^Enum%.[%a_][%w_]*$') then
+   seen.Enum, seen[name], kinds.Enum, kinds[name] = true, true, 'identifier', 'identifier'
+   for _,field in ipairs(entry.info.Fields or {}) do
+    if type(field.Name) == 'string' and field.Name:match('^[%a_][%w_]*$') then
+     local member=name..'.'..field.Name
+     seen[member], kinds[member]=true,'identifier'
+    end
+   end
+  end
+ end
  for name in pairs(seen) do names[#names + 1] = name end
  table.sort(names)
- self.names, self.revision = names, api.revision
+ self.names, self.nameKinds, self.revision = names, kinds, api.revision
  return names
 end
 
@@ -45,15 +56,19 @@ function A:Context(source, cursor)
  if #source > 100000 then return end
  local analysis = addon.Analysis:Get(source)
  if analysis.limited then return end
+ local inString=false
  for _, token in ipairs(analysis.tokens) do
   if cursor >= token.start and cursor <= token.finish and (token.kind == 'comment' or token.kind == 'string') then
-   if cursor < token.finish or token.closed ~= true then return end
+   if cursor < token.finish or token.closed ~= true then
+    if token.kind == 'comment' then return end
+    inString=true
+   end
   end
  end
  local prefix = source:sub(1, cursor):match('([%a_][%w_%.:]*)$') or ''
  local previous = source:sub(cursor - #prefix, cursor - #prefix)
- if previous == ':' or previous == '.' then return end
- return { source=source, cursor=cursor, prefix=prefix, start=cursor-#prefix, analysis=analysis, visible=self:Visible(analysis, cursor) }
+ if not inString and (previous == ':' or previous == '.') then return end
+ return { source=source, cursor=cursor, prefix=prefix, start=cursor-#prefix, analysis=analysis, visible=self:Visible(analysis, cursor), inString=inString }
 end
 
 function A:Alias(context, name)
@@ -85,6 +100,7 @@ function A:Value(context, path)
 end
 
 function A:Suggest(context, manual)
+ if context.inString then return {} end
  local prefix, found = context.prefix, {}
  if prefix == '' and not manual then return found end
  if #prefix < 2 and not manual and not prefix:find('.', 1, true) then return found end
@@ -118,8 +134,12 @@ function A:Suggest(context, manual)
    local name = names[index]
    if name:sub(1, #lookup) ~= lookup then break end
    local root = name:match('^([%w_]+)%.')
-   if alias then add(namespace..name:sub(#alias+1), 'blizzardFunction')
-   elseif not context.visible[name] and not (root and context.visible[root]) then add(name, 'blizzardFunction') end
+   local parent=lookup:match('^(.*%.)')
+   local direct=not parent or not name:sub(#parent+1):find('.',1,true)
+   if direct then
+    if alias then add(namespace..name:sub(#alias+1), self.nameKinds[name] or 'identifier')
+    elseif not context.visible[name] and not (root and context.visible[root]) then add(name, self.nameKinds[name] or 'identifier') end
+   end
    if #found >= self.limit then break end
   end
  end
@@ -228,7 +248,7 @@ function A:Draw()
  self.panel:Show()
 end
 
-function A:Update(input, manual)
+function A:Update(input, manual, signatureOnly)
  if not self:Enabled(input) or not input.editBox:HasFocus() then self:Hide(); return end
  if not addon.APIHelp.ready and not self.loadTried then self.loadTried = true; addon.APIHelp:Load(true) end
  local context = self:Context(input:GetText(), input.editBox:GetCursorPosition())
@@ -236,7 +256,7 @@ function A:Update(input, manual)
  self.lastSource, self.lastCursor, self.lastScript = context.source, context.cursor, addon.Workspace.current
  self.pending = nil
  self.input, self.context, self.selected = input, context, 1
- self.items, self.signature = self:Suggest(context, manual), self:Signature(context)
+ self.items, self.signature = signatureOnly and {} or self:Suggest(context, manual), self:Signature(context)
  if #self.items == 0 and not self.signature then self:Hide(); return end
  self:Draw()
 end
@@ -258,13 +278,21 @@ function A:Tick(input, elapsed)
  self:RestoreCursor(input)
  local source, cursor = input:GetText(), input.editBox:GetCursorPosition()
  if source ~= self.lastSource or cursor ~= self.lastCursor or addon.Workspace.current ~= self.lastScript then
+  self.pendingSuggestions=self.lastSource ~= nil and source ~= self.lastSource
+   and self.lastScript == addon.Workspace.current
+  local keepSignature=self.input == input and self.panel and self.panel:IsShown() and self.signature
+   and self.lastScript == addon.Workspace.current
   self.lastSource, self.lastCursor, self.lastScript = source, cursor, addon.Workspace.current
   self.pending = 0
-  if self.panel then self.panel:Hide() end
+  if keepSignature then
+   -- Keep parameter help during debounce, but never accept stale suggestions.
+   self.context, self.items, self.selected=nil,{},1
+   self:Draw()
+  elseif self.panel then self.panel:Hide();self:RestoreArrows() end
  end
  if self.pending then
   self.pending = self.pending + elapsed
-  if self.pending >= 0.15 then self.pending = nil; self:Update(input) end
+  if self.pending >= 0.15 then self.pending = nil; self:Update(input, false, not self.pendingSuggestions) end
  end
 end
 
@@ -275,6 +303,7 @@ function A:Accept(input)
  local finish = context.cursor
  local suffix = context.source:sub(finish+1):match('^[%w_]*') or ''
  E:SetSource(input, context.source:sub(1, context.start) .. name .. context.source:sub(finish+#suffix+1), context.start+#name)
+ self.lastSource, self.lastCursor, self.lastScript = input:GetText(), input.editBox:GetCursorPosition(), addon.Workspace.current
  self:Hide(); return true
 end
 
