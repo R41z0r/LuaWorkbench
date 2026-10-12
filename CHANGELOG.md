@@ -36,6 +36,8 @@
 
 ### Fixed
 
+- Preserve colors of unchanged symbols while typing instead of flashing between lexical and semantic highlighting.
+
 - Keep typing responsive in large scripts by updating lexical colors immediately and deferring semantic analysis until a short typing pause.
 
 - Avoid rebuilding the entire colored script while line layout catches up with typing.

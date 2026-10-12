@@ -110,6 +110,31 @@ function Editor:Tokenize(source, maxTokens, firstSource, lastSource)
  return tokens
 end
 
+-- Retain presentation only, never symbol-resolution data, across an ordinary edit.
+function Editor:RetainedColors(previous, source, spans)
+ local colors = {}
+ if not previous or not spans then return colors end
+ local prefix, high = previous == source and #source or 0, math.min(#previous, #source)
+ while prefix < high do
+  local middle = math.floor((prefix + high + 1) / 2)
+  if previous:sub(1, middle) == source:sub(1, middle) then prefix = middle else high = middle - 1 end
+ end
+ local suffix = 0
+ high = math.min(#previous, #source) - prefix
+ while suffix < high do
+  local middle = math.floor((suffix + high + 1) / 2)
+  if previous:sub(#previous-middle+1) == source:sub(#source-middle+1) then suffix = middle else high = middle - 1 end
+ end
+ for _, span in ipairs(spans) do
+  if span.colorKind and (span.kind == 'identifier' or span.kind == 'call') then
+   local start, finish = span.source, span.source + #span.text - 1
+   if finish <= prefix then colors[start] = span
+   elseif start > #previous - suffix then colors[start + #source - #previous] = span end
+  end
+ end
+ return colors
+end
+
 function Editor:Render(source, firstSource, lastSource, deferred)
  local result, spans, offset = {}, {}, 0
  local analysis
@@ -125,10 +150,13 @@ function Editor:Render(source, firstSource, lastSource, deferred)
   local finish = math.min(token.finish, lastSource or token.finish)
   local raw = source:sub(start, finish)
   local text = raw:gsub('|', '||')
-  local color = self:Color(apiPaths[token.start] and 'blizzardFunction' or token.semanticKind or token.kind)
+  local retained = not analysis and type(deferred) == 'table' and deferred.colors and deferred.colors[start]
+  local retainedKind = retained and retained.kind == token.kind and retained.text == raw and retained.colorKind
+  local colorKind = apiPaths[token.start] and 'blizzardFunction' or token.semanticKind or retainedKind or token.kind
+  local color = self:Color(colorKind)
   local rendered = color and ('|c' .. color .. text .. '|r') or text
   local first = offset + (color and 10 or 0) + 1
-  spans[#spans + 1] = { first = first, last = first + #text - 1, source = start, text = raw, kind = token.kind }
+  spans[#spans + 1] = { first = first, last = first + #text - 1, source = start, text = raw, kind = token.kind, colorKind = colorKind }
   result[#result + 1] = rendered
   offset = offset + #rendered
   end
@@ -342,20 +370,25 @@ function Editor:Paint(input)
  local analysis = addon.Analysis and addon.Analysis.cache[source]
  if state.renderSource ~= source or state.colorRevision ~= self.colorRevision or state.renderFirst ~= first or state.renderLast ~= last
   or (deferred and state.renderAnalysis ~= analysis) then
+  local owner = addon.Workspace and addon.Workspace.current
+  local options = deferred and {colors = not analysis and state.colorOwner == owner and self:RetainedColors(state.renderSource, source, state.renderSpans) or {}}
+  state.colorOwner = owner
   state.colorRevision = self.colorRevision
   state.renderSource, state.renderFirst, state.renderLast = source, first, last
   local rendered
-  rendered, state.renderSpans = self:Render(source, first, last, deferred)
+  rendered, state.renderSpans = self:Render(source, first, last, options)
   state.renderAnalysis = analysis
   -- Keep pathological single lines and editors without a viewport fully readable.
   state.nativeText = #rendered > 16000
   if state.nativeText then
    state.renderSpans = nil
-   overlay:SetText('')
+   if state.renderedText ~= '' then overlay:SetText('') end
+   state.renderedText = ''
    overlay:Hide()
    box:SetTextColor(0.8, 0.84, 0.92, 1)
   else
-   overlay:SetText(rendered)
+   if state.renderedText ~= rendered then overlay:SetText(rendered) end
+   state.renderedText = rendered
    overlay:Show()
    box:SetTextColor(1, 1, 1, 0)
   end
