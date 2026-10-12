@@ -36,6 +36,8 @@
 
 ### Fixed
 
+- Reduce freezes when pasting large scripts into the editor.
+
 - Avoid full-prefix tokenization when automatically pairing quotes and brackets in large scripts.
 
 - Reduce line-number allocation and scrolling overhead in large scripts.

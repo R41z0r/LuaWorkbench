@@ -546,6 +546,7 @@ function Editor:UpdateAutoPairs(input, source, hint)
 end
 
 function Editor:SetSource(input, source, cursor, preservePairs)
+ if addon.BufferedPaste then addon.BufferedPaste:Finish(input.editBox) end
  if self:IsReadOnly(input) and not (addon.Workspace and addon.Workspace.selecting) then return false end
  local state = input.queryEditor
  if not state then return end
@@ -891,12 +892,14 @@ function Editor:Attach(input)
   end
   if original then original(frame, button) end
  end)
+ if addon.BufferedPaste then addon.BufferedPaste:Attach(box, function() return not self:IsReadOnly(input) end) end
  self:Paint(input)
 end
 
 function Editor:Detach(input)
  local state = input and input.queryEditor
  if not state then return end
+ if addon.BufferedPaste then addon.BufferedPaste:Detach(input.editBox) end
  for _, script in ipairs(state.scripts) do input.editBox:SetScript(script.event, script.original) end
  input.editBox:SetTextColor(unpack(state.color))
  state.overlay:Hide()

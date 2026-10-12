@@ -37,6 +37,7 @@ libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
 libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
 libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 Localization.lua
+BufferedPaste.lua
 LuaEditor.lua
 Analysis.lua
 LuaConsole.lua

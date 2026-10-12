@@ -283,8 +283,12 @@ function UI:Editor(parent, labelText, readonly)
  box:SetHeight(1)
  scroll:SetScrollChild(box)
  local input = { frame = panel, editBox = box, scrollFrame = scroll, scrollBG = scrollBG, label = label, readonly = readonly }
- function input:GetText() return self.editBox:GetText() end
+ function input:GetText()
+  if addon.BufferedPaste then addon.BufferedPaste:Finish(self.editBox) end
+  return self.editBox:GetText()
+ end
  function input:SetText(text)
+  if addon.BufferedPaste then addon.BufferedPaste:Finish(self.editBox) end
   self.rawText = text
   self.setting = true
   self.editBox:SetText(text)
