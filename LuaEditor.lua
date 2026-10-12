@@ -523,7 +523,8 @@ function Editor:Attach(input)
  end)
  wrap('OnEscapePressed', function(original, frame)
   local completion = addon.Autocomplete
-  if completion and completion.input == input and completion.panel and completion.panel:IsShown() then completion:Hide(); return end
+  if completion and completion.input == input and ((completion.panel and completion.panel:IsShown())
+   or (completion.signaturePanel and completion.signaturePanel:IsShown())) then completion:Hide(); return end
   if original then original(frame) end
  end)
  wrap('OnEnterPressed', function(original, frame)

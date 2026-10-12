@@ -163,7 +163,7 @@ function A:Signature(context)
       if tokens[index] and (tokens[index].text == ':' or tokens[index].text == 'function') then name = '' end
      end
     end
-    stack[#stack + 1] = { opening=text, name=name, argument=1 }
+    stack[#stack + 1] = { opening=text, name=name, argument=1, position0=token.start-1 }
    elseif text == ')' or text == '}' or text == ']' then table.remove(stack)
    elseif text == ',' and stack[#stack] then stack[#stack].argument = stack[#stack].argument + 1 end
    tokens[#tokens+1] = token
@@ -180,7 +180,7 @@ function A:Signature(context)
    for n,name in ipairs(args) do
     args[n]='|c'..E:Color(n==call.argument and 'functionName' or 'parameter')..name..'|r'
    end
-   return call.name..'('..table.concat(args,', ')..')'
+   return call.name..'('..table.concat(args,', ')..')', call.position0
   end
   local root = call.name:match('^[%w_]+')
   local alias = root and self:Alias(context,root)
@@ -193,7 +193,7 @@ function A:Signature(context)
     if arg.Default ~= nil then text = text .. ' = ' .. tostring(arg.Default) end
     args[#args+1] = '|c' .. E:Color(n == call.argument and 'functionName' or 'parameter') .. text:gsub('|','||') .. '|r'
    end
-   return call.name .. '(' .. table.concat(args, ', ') .. ')'
+   return call.name .. '(' .. table.concat(args, ', ') .. ')', call.position0
   end
  end
 end
@@ -207,6 +207,7 @@ function A:Hide()
  self.keySource, self.keyCursor = nil, nil
  self:RestoreArrows()
  if self.panel then self.panel:Hide() end
+ if self.signaturePanel then self.signaturePanel:Hide() end
  self.context, self.items, self.input, self.pending = nil, nil, nil, nil
 end
 
@@ -222,6 +223,13 @@ function A:Build()
  end
  self.selection = panel:CreateTexture(nil, 'ARTWORK'); self.selection:SetColorTexture(0.15,0.3,0.48,1)
  self.hint = UI:Text(panel, '', 11); self.hint:SetWordWrap(true); self.hint:SetJustifyH('LEFT')
+ local help=CreateFrame('Frame',nil,UIParent);self.signaturePanel=help
+ help:SetFrameStrata('TOOLTIP');help:SetClampedToScreen(true);help:EnableMouse(false)
+ UI:Background(help,UI.colors.panel);UI:Border(help,{0.3,0.4,0.5,1})
+ self.signatureText=UI:Text(help,'',12)
+ self.signatureText:SetPoint('TOPLEFT',8,-8);self.signatureText:SetWidth(504)
+ self.signatureText:SetWordWrap(true);self.signatureText:SetJustifyH('LEFT')
+ help:Hide()
 end
 
 function A:Draw()
@@ -241,11 +249,18 @@ function A:Draw()
  end
  self.selection:ClearAllPoints(); self.selection:SetPoint('TOPLEFT', 4, -6-((self.selected or 1)-1)*20); self.selection:SetSize(412,20); self.selection:SetShown(count>0)
  self.hint:ClearAllPoints(); self.hint:SetPoint('TOPLEFT', 8, -10-count*20); self.hint:SetWidth(404)
- self.hint:SetText((self.signature or '') .. (count>0 and ('\n' .. L.autocompleteHelp) or ''))
+ self.hint:SetText(L.autocompleteHelp)
  self.panel:SetSize(420, 20+count*20+self.hint:GetStringHeight())
  local input = self.input
  self.panel:ClearAllPoints(); self.panel:SetPoint('TOPLEFT', input.editBox, 'TOPLEFT', input.cursorX or 0, (input.cursorY or 0)-20)
- self.panel:Show()
+ self.panel:SetShown(count>0)
+ if self.signature then
+  if self.signatureText:GetText() ~= self.signature then self.signatureText:SetText(self.signature) end
+  self.signaturePanel:SetSize(520,16+self.signatureText:GetStringHeight())
+  self.signaturePanel:ClearAllPoints()
+  self.signaturePanel:SetPoint('BOTTOMLEFT',input.editBox,'TOPLEFT',input.cursorX or 0,(input.cursorY or 0)+4)
+  self.signaturePanel:Show()
+ else self.signaturePanel:Hide() end
 end
 
 function A:Update(input, manual, signatureOnly)
@@ -256,7 +271,10 @@ function A:Update(input, manual, signatureOnly)
  self.lastSource, self.lastCursor, self.lastScript = context.source, context.cursor, addon.Workspace.current
  self.pending = nil
  self.input, self.context, self.selected = input, context, 1
- self.items, self.signature = signatureOnly and {} or self:Suggest(context, manual), self:Signature(context)
+ local previousCall=self.signatureCall
+ self.items=signatureOnly and {} or self:Suggest(context,manual)
+ self.signature,self.signatureCall=self:Signature(context)
+ if signatureOnly and previousCall ~= self.signatureCall then self.signature=nil end
  if #self.items == 0 and not self.signature then self:Hide(); return end
  self:Draw()
 end
@@ -280,7 +298,7 @@ function A:Tick(input, elapsed)
  if source ~= self.lastSource or cursor ~= self.lastCursor or addon.Workspace.current ~= self.lastScript then
   self.pendingSuggestions=self.lastSource ~= nil and source ~= self.lastSource
    and self.lastScript == addon.Workspace.current
-  local keepSignature=self.input == input and self.panel and self.panel:IsShown() and self.signature
+  local keepSignature=self.input == input and self.signaturePanel and self.signaturePanel:IsShown() and self.signature
    and self.lastScript == addon.Workspace.current
   self.lastSource, self.lastCursor, self.lastScript = source, cursor, addon.Workspace.current
   self.pending = 0
@@ -288,7 +306,10 @@ function A:Tick(input, elapsed)
    -- Keep parameter help during debounce, but never accept stale suggestions.
    self.context, self.items, self.selected=nil,{},1
    self:Draw()
-  elseif self.panel then self.panel:Hide();self:RestoreArrows() end
+  else
+   self:Hide()
+   if self.pendingSuggestions then self.pending=0 end
+  end
  end
  if self.pending then
   self.pending = self.pending + elapsed
@@ -304,7 +325,10 @@ function A:Accept(input)
  local suffix = context.source:sub(finish+1):match('^[%w_]*') or ''
  E:SetSource(input, context.source:sub(1, context.start) .. name .. context.source:sub(finish+#suffix+1), context.start+#name)
  self.lastSource, self.lastCursor, self.lastScript = input:GetText(), input.editBox:GetCursorPosition(), addon.Workspace.current
- self:Hide(); return true
+ self.keySource,self.keyCursor=nil,nil
+ self:RestoreArrows()
+ self:Update(input,false,true)
+ return true
 end
 
 function A:Key(input, key)

@@ -20,6 +20,10 @@
 
 ### Changed
 
+- Dismissed parameter help stays closed during cursor navigation; Ctrl+Space opens it again for the current call.
+
+- Show parameter help above the cursor and completion suggestions below it in separate windows.
+
 - Open automatic completion while editing, without interrupting cursor navigation through existing code; Ctrl+Space still requests suggestions explicitly.
 
 - Keep parameter hints visible while typing arguments, including quoted strings.
