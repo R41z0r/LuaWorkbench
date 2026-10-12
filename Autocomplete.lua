@@ -56,6 +56,16 @@ function A:Context(source, cursor)
  return { source=source, cursor=cursor, prefix=prefix, start=cursor-#prefix, analysis=analysis, visible=self:Visible(analysis, cursor) }
 end
 
+function A:Alias(context, name)
+ local definition = context.visible[name]
+ if not definition then return end
+ local namespace
+ for _,entry in ipairs(definition.apiAliases or {}) do
+  if entry.position0 <= context.cursor then namespace = entry.namespace end
+ end
+ return namespace or nil
+end
+
 function A:Suggest(context, manual)
  local prefix, found = context.prefix, {}
  if prefix == '' and not manual then return found end
@@ -64,19 +74,22 @@ function A:Suggest(context, manual)
   if name:sub(1, #prefix) == prefix and name ~= prefix then found[#found + 1] = { name=name, kind=kind } end
  end
  local namespace = prefix:match('^([%w_]+)%.')
+ local alias = namespace and self:Alias(context,namespace)
+ local lookup = alias and (alias..prefix:sub(#namespace+1)) or prefix
  if not namespace then
   for name, def in pairs(context.visible) do add(name, def.kind) end
   table.sort(found, function(a,b) return a.name < b.name end)
  end
- if not namespace or not context.visible[namespace] then
+ if alias or not namespace or not context.visible[namespace] then
   local names = self:Names()
   local lo, hi = 1, #names + 1
-  while lo < hi do local mid = math.floor((lo + hi) / 2); if names[mid] and names[mid] < prefix then lo = mid + 1 else hi = mid end end
+  while lo < hi do local mid = math.floor((lo + hi) / 2); if names[mid] and names[mid] < lookup then lo = mid + 1 else hi = mid end end
   for index = lo, #names do
    local name = names[index]
-   if name:sub(1, #prefix) ~= prefix then break end
+   if name:sub(1, #lookup) ~= lookup then break end
    local root = name:match('^([%w_]+)%.')
-   if not context.visible[name] and not (root and context.visible[root]) then add(name, 'blizzardFunction') end
+   if alias then add(namespace..name:sub(#alias+1), 'blizzardFunction')
+   elseif not context.visible[name] and not (root and context.visible[root]) then add(name, 'blizzardFunction') end
    if #found >= self.limit then break end
   end
  end
@@ -109,8 +122,10 @@ function A:Signature(context)
  for index = #stack, 1, -1 do
   local call = stack[index]
   local root = call.name:match('^[%w_]+')
-  local info = addon.APIHelp.index[call.name]
-  if info and not context.visible[root] then
+  local alias = root and self:Alias(context,root)
+  local canonical = alias and (alias..call.name:sub(#root+1)) or call.name
+  local info = addon.APIHelp.index[canonical]
+  if info and (alias or not context.visible[root]) then
    local args = {}
    for n, arg in ipairs(info.Arguments or {}) do
     local text = arg.Name .. ((arg.Nilable or arg.Default ~= nil) and '?' or '') .. ': ' .. (arg.Type == 'bool' and 'boolean' or arg.Type or '?')

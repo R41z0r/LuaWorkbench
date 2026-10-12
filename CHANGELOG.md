@@ -4,6 +4,8 @@
 
 ### Added
 
+- Complete documented API members and show parameter hints through local namespace aliases such as `local CA = C_AddOns`.
+
 - Optional code completion for documented Blizzard APIs, local variables, parameters and script functions, with keyboard selection, Enter/Tab acceptance and API parameter hints. Suggestions respect local namespace shadowing and implicit method parameters.
 
 - Copy or cut the current line with native clipboard shortcuts when no text is selected, including repeated cuts and empty final lines. Paste copied lines above the current line; returning from another copy field restores ordinary paste behavior.

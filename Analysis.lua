@@ -34,6 +34,7 @@ function Parser:lookup(name)
 end
 function Parser:declare(token, kind, value)
  local definition = { name = token.text, position0 = token.start - 1, kind = kind or 'localVariable', value = value, scope=self.current, visible0=(self.items[self.index-1] or token).finish, scopeID=self.current.id, functionDepth=self.functionDepth or 0 }
+ definition.apiAliases = {{position0=definition.visible0, namespace=value and value.apiNamespace or false}}
  self.current.names[token.text] = definition
  token.definition, token.semanticKind = definition, definition.kind
  self.result.definitions[#self.result.definitions + 1] = definition
@@ -75,7 +76,11 @@ function Parser:expression(minimum)
  local token = self:take()
  local value
  local bareHelper = token.text == 'requireHelper' and not self:lookup(token.text) and not self.result.globals.requireHelper
- if identifier(token) then value = self:reference(token)
+ if identifier(token) then
+  value = self:reference(token)
+  if not token.definition and not self.result.globals[token.text] and token.text:match('^C_[%w_]+$') then
+   value = {apiNamespace=token.text}
+  end
  elseif token.text == 'function' then value = { functionToken=token }; self:body()
  elseif token.text == '{' then
   value = { members={} }
@@ -220,6 +225,9 @@ function Parser:statement()
       if reference.captured then reference.token.import=nil; self.result.imports[reference.token.start-1]=nil end
      end
      definition.value=definition.scopeID == self.current.id and value or nil
+     definition.apiAliases = definition.apiAliases or {}
+     definition.apiAliases[#definition.apiAliases+1] = {position0=(self.items[self.index-1] or first).finish,
+      namespace=definition.value and definition.value.apiNamespace or false}
      if value and value.functionToken and first.definition.kind ~= 'parameter' then first.definition.kind='functionName' end
     elseif target.direct and identifier(first) then
      self.result.globals[first.text]=self.result.globals[first.text] or {}
