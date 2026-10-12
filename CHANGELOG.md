@@ -36,6 +36,8 @@
 
 ### Fixed
 
+- Reuse unchanged syntax tokens to reduce typing overhead near the end of large scripts.
+
 - Reduce cursor-position update overhead when editing near the end of large scripts.
 
 - Update open completion suggestions without flickering while refining a name, retaining the selected match when possible.

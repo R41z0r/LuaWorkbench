@@ -41,12 +41,12 @@ function Editor:IndentWidth()
  return addon.Workspace and addon.Workspace.db and addon.Workspace.db.options.indentWidth or 4
 end
 
-function Editor:Tokenize(source, maxTokens, firstSource, lastSource)
- local tokens, index, length, count = {}, 1, #source, 0
+function Editor:ScanTokens(source, maxTokens, firstSource, lastSource, scanStart)
+ local tokens, index, length, count = {}, scanStart or 1, #source, 0
  local function add(kind, finish, closed)
   count = count + 1
   if not firstSource or finish >= firstSource then
-   tokens[#tokens + 1] = { kind = kind, text = source:sub(index, math.min(finish, lastSource or finish)), start = index, finish = finish, closed = closed }
+   tokens[#tokens + 1] = { kind = kind, text = source:sub(index, finish), start = index, finish = finish, closed = closed }
   end
   index = finish + 1
  end
@@ -108,6 +108,75 @@ function Editor:Tokenize(source, maxTokens, firstSource, lastSource)
   end
  end
  return tokens
+end
+
+-- Only lexical data is shared. Analysis owns and may annotate its returned tokens.
+-- Keep one bounded source snapshot; edits invalidate from a token boundary, including
+-- preceding whitespace because an identifier can look ahead to a call parenthesis.
+function Editor:Tokenize(source, maxTokens, firstSource, lastSource)
+ if #source > 200000 then
+  local tokens=self:ScanTokens(source,maxTokens,firstSource,lastSource)
+  if lastSource then for _,token in ipairs(tokens) do token.text=source:sub(token.start,math.min(token.finish,lastSource)) end end
+  return tokens
+ end
+ local cache = self.lexicalCache
+ if not cache then cache = {source='', tokens={}}; self.lexicalCache = cache end
+ local raw = cache.tokens
+ if cache.source ~= source then
+  local prefix, high = 0, math.min(#cache.source, #source)
+  while prefix < high do
+   local middle = math.floor((prefix+high+1)/2)
+   if cache.source:sub(1,middle) == source:sub(1,middle) then prefix=middle else high=middle-1 end
+  end
+  local low, upper = 1, #raw+1
+  while low < upper do
+   local middle = math.floor((low+upper)/2)
+   if raw[middle].finish < prefix then low=middle+1 else upper=middle end
+  end
+  local restart = math.min(low, #raw)
+  -- Restart the changed line as delimiters and numeric literals can span several
+  -- formerly separate tokens (for example an unfinished long-bracket opener).
+  while restart > 1 and raw[restart-1].kind ~= 'newline' do restart=restart-1 end
+  while restart > 1 and (raw[restart-1].kind == 'space' or raw[restart-1].kind == 'newline') do restart=restart-1 end
+  if restart > 1 then restart=restart-1 end
+  while restart > 1 and (raw[restart].kind == 'space' or raw[restart].kind == 'newline') do restart=restart-1 end
+  for i=#raw,math.max(1,restart),-1 do raw[i]=nil end
+  cache.source = source
+ end
+ local limit = math.min(maxTokens or 50000, 50000)
+ local start = #raw > 0 and raw[#raw].finish+1 or 1
+ if start <= #source and (not lastSource or start <= lastSource) and #raw < limit then
+  local tail = self:ScanTokens(source, limit-#raw, nil, lastSource, start)
+  for _,token in ipairs(tail) do
+   if not token.truncated then raw[#raw+1]=token end
+  end
+ end
+ local result = {}
+ local first, upper = 1, math.min(#raw,limit)+1
+ if firstSource then
+  while first < upper do
+   local middle=math.floor((first+upper)/2)
+   if raw[middle].finish < firstSource then first=middle+1 else upper=middle end
+  end
+ end
+ for i=first,math.min(#raw,limit) do
+  local token=raw[i]
+  if lastSource and token.start > lastSource then break end
+  if not firstSource or token.finish >= firstSource then
+   result[#result+1]={kind=token.kind, text=source:sub(token.start,math.min(token.finish,lastSource or token.finish)), start=token.start, finish=token.finish, closed=token.closed}
+  end
+ end
+ local finish = limit == 0 and 0 or (raw[limit] and raw[limit].finish or (#raw > 0 and raw[#raw].finish or 0))
+ if finish < #source and (not lastSource or finish < lastSource) then
+  if not maxTokens or maxTokens > limit then
+   -- Unbounded formatting/debug callers retain their original full-source behavior.
+   local tail=self:ScanTokens(source,maxTokens and maxTokens-limit,firstSource,lastSource,finish+1)
+   for _,token in ipairs(tail) do result[#result+1]=token end
+  else
+   result[#result+1]={kind='plain',text=source:sub(finish+1,lastSource),start=finish+1,finish=#source,truncated=true}
+  end
+ end
+ return result
 end
 
 -- Retain presentation only, never symbol-resolution data, across an ordinary edit.
