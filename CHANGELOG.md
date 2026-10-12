@@ -36,6 +36,12 @@
 
 ### Fixed
 
+- Keep large scripts fully visible and reduce typing overhead by coloring the visible excerpt and reusing unchanged line measurements.
+
+- Keep repeated modified Backspace working after replacing or deleting selected text.
+
+- Reduce editing overhead in large scripts by limiting hover geometry to visible lines and skipping breakpoint remapping when none are set.
+
 - Keep the code editor focused when running a script with F5.
 
 - Keep breakpoints aligned when inserting newlines or joining lines with Backspace/Delete, including blank lines and automatic indentation.

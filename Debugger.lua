@@ -25,6 +25,7 @@ end
 
 function D:RemapBreakpoints(points, previous, source, edit)
  local mapped = {}
+ if next(points) == nil then return mapped end
  if previous == source or type(previous) ~= 'string' then
   for line in pairs(points) do mapped[line] = true end
   return mapped

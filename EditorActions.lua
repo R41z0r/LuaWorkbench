@@ -250,6 +250,12 @@ end
 
 function A:Text(input, text)
  local state = input.queryEditor
+ -- A native edit consumes its selection even while Command/Control stays held.
+ -- Cursor callbacks alone cannot clear it because those modifiers preserve selections.
+ if text ~= state.source then
+  state.selectionStart, state.selectionEnd, state.selectionUnknown = nil,nil,nil
+  state.actionCursor = input.editBox:GetCursorPosition()
+ end
  local backward = state.backwardDelete
  if backward then
   state.backwardDelete = nil

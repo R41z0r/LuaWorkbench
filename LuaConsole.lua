@@ -197,16 +197,24 @@ function Console:UpdateLineNumbers()
 	local font, size, flags = editBox:GetFont()
 	local spacing = editBox:GetSpacing()
 	if state.source ~= source or state.width ~= width or state.font ~= font or state.size ~= size or state.flags ~= flags or state.spacing ~= spacing then
+		local previousHeights = state.width == width and state.font == font and state.size == size and state.flags == flags and state.spacing == spacing and state.lineHeights or {}
+		local heights = {}
+		state.lineHeights = heights
 		state.source, state.width, state.font, state.size, state.flags, state.spacing = source, width, font, size, flags, spacing
 		state.measure:SetFont(font, size, flags)
 		state.measure:SetSpacing(spacing)
 		state.measure:SetWidth(math.max(1, width))
 		state.positions = {}
-		local offset = 0
+		local offset, sourceStart = 0, 1
 		for text in (source .. "\n"):gmatch("(.-)\n") do
-			state.measure:SetText(text ~= "" and text or " ")
-			local height = math.max(size + spacing, state.measure:GetStringHeight())
-			state.positions[#state.positions + 1] = { offset = offset, height = height }
+			local height = heights[text] or previousHeights[text]
+			if not height then
+				state.measure:SetText(text ~= "" and text or " ")
+				height = math.max(size + spacing, state.measure:GetStringHeight())
+			end
+			heights[text] = height
+			state.positions[#state.positions + 1] = { offset = offset, height = height, sourceStart=sourceStart, sourceEnd=sourceStart+#text }
+			sourceStart=sourceStart+#text+1
 			offset = offset + height
 		end
 	end

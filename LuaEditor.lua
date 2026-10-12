@@ -107,18 +107,23 @@ function Editor:Tokenize(source, maxTokens)
  return tokens
 end
 
-function Editor:Render(source)
+function Editor:Render(source, firstSource, lastSource)
  local result, spans, offset = {}, {}, 0
  local tokens = addon.Analysis and addon.Analysis:Get(source).tokens or self:Tokenize(source)
  local apiPaths = addon.APIHelp and addon.APIHelp:Paths(source) or {}
  for _, token in ipairs(tokens) do
-  local text = token.text:gsub('|', '||')
+  if (not firstSource or token.finish >= firstSource) and (not lastSource or token.start <= lastSource) then
+  local start = math.max(token.start, firstSource or token.start)
+  local finish = math.min(token.finish, lastSource or token.finish)
+  local raw = source:sub(start, finish)
+  local text = raw:gsub('|', '||')
   local color = self:Color(apiPaths[token.start] and 'blizzardFunction' or token.semanticKind or token.kind)
   local rendered = color and ('|c' .. color .. text .. '|r') or text
   local first = offset + (color and 10 or 0) + 1
-  spans[#spans + 1] = { first = first, last = first + #text - 1, source = token.start, text = token.text, kind = token.kind }
+  spans[#spans + 1] = { first = first, last = first + #text - 1, source = start, text = raw, kind = token.kind }
   result[#result + 1] = rendered
   offset = offset + #rendered
+  end
  end
  return table.concat(result), spans
 end
@@ -154,6 +159,21 @@ function Editor:HoverSourcePosition(input, x, y)
  if not font or type(font.CalculateScreenAreaFromCharacterSpan) ~= 'function' then return end
  local left, bottom = font:GetLeft(), font:GetBottom()
  if not left or not bottom then return end
+ local layout=input.queryLineNumbers
+ if layout and layout.source ~= state.renderSource then return end
+ local scroll=input.scrollFrame
+ local scrollOffset=scroll and scroll:GetVerticalScroll()
+ local viewport=scroll and scroll:GetHeight()
+ local positions=layout and layout.source == state.renderSource and layout.positions
+ local firstSource,lastSource
+ if positions and scrollOffset and viewport then
+  for _,line in ipairs(positions) do
+   if line.offset+line.height >= scrollOffset and line.offset < scrollOffset+viewport then
+    firstSource=firstSource or line.sourceStart
+    lastSource=line.sourceEnd
+   end
+  end
+ end
  local cache = state.hoverAreas
  local height, width = font:GetHeight(), font:GetWidth()
  local face, size, flags = font:GetFont()
@@ -164,10 +184,12 @@ function Editor:HoverSourcePosition(input, x, y)
  local advance = type(lines) == 'number' and lines > 0 and (textHeight + spacing) / lines
  if not cache or cache.spans ~= state.renderSpans or cache.height ~= height or cache.width ~= width
   or cache.face ~= face or cache.size ~= size or cache.flags ~= flags or cache.spacing ~= spacing
-  or cache.lines ~= lines or cache.textHeight ~= textHeight or cache.scale ~= scale then
-  cache = { spans = state.renderSpans, height = height, width = width, face = face, size = size, flags = flags, spacing = spacing, lines = lines, textHeight = textHeight, scale = scale, entries = {} }
+  or cache.lines ~= lines or cache.textHeight ~= textHeight or cache.scale ~= scale
+  or cache.firstSource ~= firstSource or cache.lastSource ~= lastSource then
+  cache = { firstSource=firstSource, lastSource=lastSource, spans = state.renderSpans, height = height, width = width, face = face, size = size, flags = flags, spacing = spacing, lines = lines, textHeight = textHeight, scale = scale, entries = {} }
   for _, span in ipairs(state.renderSpans or {}) do
-   if span.kind == 'identifier' or span.kind == 'call' then
+   if (span.kind == 'identifier' or span.kind == 'call')
+    and (not firstSource or not lastSource or span.source >= firstSource and span.source <= lastSource) then
     local areas = font:CalculateScreenAreaFromCharacterSpan(span.first, span.last)
     for _, area in ipairs(areas or {}) do
      -- Native selection rectangles can use a fractional row advance while the
@@ -257,6 +279,27 @@ function Editor:Format(source, cursor)
  return table.concat(result, '\n'), newCursor
 end
 
+function Editor:VisibleRange(input, source)
+ local layout, scroll = input.queryLineNumbers, input.scrollFrame
+ if not layout or layout.source ~= source or not scroll then return end
+ local offset, height = scroll:GetVerticalScroll(), scroll:GetHeight()
+ local first, last, y
+ local positions = layout.positions or {}
+ local low, high = 1, #positions
+ while low <= high do
+  local middle = math.floor((low + high) / 2)
+  local line = positions[middle]
+  if line.offset + line.height < offset then low = middle + 1 else high = middle - 1 end
+ end
+ for index = low, #positions do
+  local line = positions[index]
+  if line.offset >= offset + height then break end
+  first, y = first or line.sourceStart, y or line.offset
+  last = line.sourceEnd
+ end
+ return first, last, y
+end
+
 function Editor:Paint(input)
  local state = input.queryEditor
  if not state then return end
@@ -264,26 +307,39 @@ function Editor:Paint(input)
  local font, size, flags = box:GetFont()
  local left, right, top = box:GetTextInsets()
  local width, spacing, source = math.max(1, box:GetWidth() - left - right), box:GetSpacing(), box:GetText()
+ local first, last, offset = self:VisibleRange(input, source)
+ offset = offset or 0
  if state.paintFont ~= font or state.paintSize ~= size or state.paintFlags ~= flags then
   overlay:SetFont(font, size, flags)
   state.paintFont, state.paintSize, state.paintFlags = font, size, flags
  end
  if state.paintSpacing ~= spacing then overlay:SetSpacing(spacing); state.paintSpacing = spacing end
- if state.paintWidth ~= width or state.paintLeft ~= left or state.paintTop ~= top then
+ if state.paintWidth ~= width or state.paintLeft ~= left or state.paintTop ~= top or state.paintOffset ~= offset then
   overlay:ClearAllPoints()
-  overlay:SetPoint('TOPLEFT', box, 'TOPLEFT', left, -top)
+  overlay:SetPoint('TOPLEFT', box, 'TOPLEFT', left, -top-offset)
   overlay:SetWidth(width)
-  state.paintWidth, state.paintLeft, state.paintTop = width, left, top
+  state.paintWidth, state.paintLeft, state.paintTop, state.paintOffset = width, left, top, offset
  end
  -- Let the font string calculate its full height before drawing a new snippet.
  -- Reusing the previous edit box height briefly clips newly wrapped lines.
  overlay:SetHeight(0)
- if state.renderSource ~= source or state.colorRevision ~= self.colorRevision then
+ if state.renderSource ~= source or state.colorRevision ~= self.colorRevision or state.renderFirst ~= first or state.renderLast ~= last then
   state.colorRevision = self.colorRevision
-  state.renderSource = source
+  state.renderSource, state.renderFirst, state.renderLast = source, first, last
   local rendered
-  rendered, state.renderSpans = self:Render(source)
-  overlay:SetText(rendered)
+  rendered, state.renderSpans = self:Render(source, first, last)
+  -- Keep pathological single lines and editors without a viewport fully readable.
+  state.nativeText = #rendered > 16000
+  if state.nativeText then
+   state.renderSpans = nil
+   overlay:SetText('')
+   overlay:Hide()
+   box:SetTextColor(0.8, 0.84, 0.92, 1)
+  else
+   overlay:SetText(rendered)
+   overlay:Show()
+   box:SetTextColor(1, 1, 1, 0)
+  end
  end
  state.pending = nil
 end
@@ -517,7 +573,9 @@ function Editor:Attach(input)
   if original then original(frame, elapsed) end
   if addon.Autocomplete then addon.Autocomplete:Tick(input, elapsed) end
   state.elapsed = state.elapsed + elapsed
-  if state.pending and state.elapsed >= 0.08 then self:Paint(input) end
+  local first, last = self:VisibleRange(input, frame:GetText())
+  if first ~= state.renderFirst or last ~= state.renderLast then state.pending = true end
+  if state.pending and (state.elapsed >= 0.08 or state.renderSource == frame:GetText()) then self:Paint(input) end
   state.caret:SetShown(frame:HasFocus() and state.elapsed % 1 < 0.5)
   state.active:SetShown(frame:HasFocus())
  end)
