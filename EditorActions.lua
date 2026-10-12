@@ -71,6 +71,32 @@ function A:Cursor(input)
  state.actionCursor = cursor
 end
 
+function A:BackwardRange(source, cursor, mode)
+ local function previous(at)
+  at = math.max(0, at-1)
+  while at > 0 do
+   local byte = source:byte(at+1)
+   if not byte or byte < 128 or byte >= 192 then break end
+   at = at-1
+  end
+  return at
+ end
+ if mode == 'character' then return previous(cursor) end
+ local first = self:Bounds(source,cursor)
+ if mode == 'line' then return first end
+ if cursor == first then return previous(cursor) end
+ local at = cursor
+ while at > first and source:sub(at,at):match('[ \t]') do at=at-1 end
+ if at == first then return first end
+ local function word(pos)
+  local byte = source:byte(pos)
+  return byte and (byte >= 128 or source:sub(pos,pos):match('[%w_]') ~= nil)
+ end
+ local isWord = word(at)
+ while at > first and not source:sub(at,at):match('[ \t]') and word(at) == isWord do at=previous(at) end
+ return at
+end
+
 function A:Key(input, key)
  if input ~= addon.Query.Console.input then return end
  local state, box = input.queryEditor, input.editBox
@@ -78,6 +104,19 @@ function A:Key(input, key)
  local alt = _G.IsAltKeyDown and IsAltKeyDown()
  local shift = _G.IsShiftKeyDown and IsShiftKeyDown()
  local source, cursor = input:GetText(), box:GetCursorPosition()
+ local meta = _G.IsMetaKeyDown and _G.IsMetaKeyDown()
+ if key == 'BACKSPACE' and _G.IsMacClient and _G.IsMacClient() and (ctrl or alt or meta)
+  and not E:IsReadOnly(input) and not self:Selection(input) then
+  local first = self:BackwardRange(source,cursor,meta and 'line' or (alt and 'word' or 'character'))
+  local expected = source:sub(1,first)..source:sub(cursor+1)
+  state.backwardDelete = {source=source, expected=expected, cursor=first}
+  if source:sub(first+1,cursor) == '\n' then
+   state.breakpointEdit = {oldSource=source,oldCursor=cursor,joinAt=first,expectedSource=expected}
+  end
+  if first ~= cursor then box:HighlightText(first,cursor) end
+  if addon.Autocomplete then addon.Autocomplete:Hide() end
+  return true
+ end
  if alt and not ctrl and (key=='UP' or key=='DOWN') and not E:IsReadOnly(input) then
   if state.selectionUnknown then return end
   local first, last = state.selectionStart, state.selectionEnd
@@ -99,7 +138,6 @@ function A:Key(input, key)
   if addon.Autocomplete then addon.Autocomplete:Hide() end
   return true
  end
- local meta = _G.IsMetaKeyDown and _G.IsMetaKeyDown()
  local nativeModifier = meta or (ctrl and not (_G.IsMacClient and _G.IsMacClient()))
  if not nativeModifier or alt then return end
  if key=='A' then state.selectionStart, state.selectionEnd=0,#source; return end
@@ -133,6 +171,15 @@ end
 
 function A:Text(input, text)
  local state = input.queryEditor
+ local backward = state.backwardDelete
+ if backward then
+  state.backwardDelete = nil
+  if state.source == backward.source then
+   state.selectionStart, state.selectionEnd, state.selectionUnknown = nil,nil,nil
+   state.actionCursor = backward.cursor
+   return backward.expected, backward.cursor
+  end
+ end
  local paste = state.paste
  state.paste = nil
  if paste then
@@ -157,6 +204,12 @@ end
 function A:KeyUp(input)
  local state, box = input.queryEditor, input.editBox
  local clip=state.clipboard
+ local backward = state.backwardDelete
+ state.backwardDelete = nil
+ if backward then
+  box:HighlightText(0,0)
+  state.selectionStart, state.selectionEnd, state.selectionUnknown = nil,nil,nil
+ end
  local pasted = state.nativePaste
  state.clipboard, state.paste, state.actionLock, state.nativePaste = nil,nil,nil,nil
  if clip and clip.key=='C' and input:GetText()==clip.source then

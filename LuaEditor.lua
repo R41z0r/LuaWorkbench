@@ -531,12 +531,14 @@ function Editor:Attach(input)
   else frame:Insert(string.rep(' ', self:IndentWidth())) end
  end)
  wrap('OnEditFocusLost', function(original, ...)
+  state.backwardDelete = nil
   if addon.EditorActions and input == addon.Query.Console.input then addon.EditorActions.lineClipboard = nil end
   if addon.Autocomplete and addon.Autocomplete.input == input then addon.Autocomplete:Hide() end
   state.formatEdit = nil
   if original then original(...) end
  end)
  wrap('OnHide', function(original, ...)
+  state.backwardDelete = nil
   if addon.EditorActions and input == addon.Query.Console.input then addon.EditorActions.lineClipboard = nil end
   if addon.Autocomplete and addon.Autocomplete.input == input then addon.Autocomplete:Hide() end
   state.formatEdit = nil

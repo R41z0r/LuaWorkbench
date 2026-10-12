@@ -12,6 +12,10 @@
 
 - Move the current line or selected line blocks with Alt+Up/Down and duplicate them with Alt+Shift+Up/Down, including blocks selected with the mouse and trailing empty lines at the end of the document.
 
+### Changed
+
+- On macOS, Ctrl+Backspace deletes one character, Option+Backspace deletes the previous word, and Command+Backspace deletes to the start of the current line.
+
 ### Fixed
 
 - Keep the code editor focused when running a script with F5.
