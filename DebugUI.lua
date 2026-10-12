@@ -573,6 +573,9 @@ function U:HoverUpdate(elapsed, target, record)
  local state = input.queryEditor
  local font = state and state.overlay
  if not font or state.renderSource ~= source then return end
+ if #source > 20000 and addon.Analysis and not addon.Analysis.cache[source] then
+  self:HideTooltip(input.editBox, 'analysis-pending'); return
+ end
  if type(font.CalculateScreenAreaFromCharacterSpan) ~= 'function' then self:TraceHover('missing-area-api'); return end
  local actual, size, flags = font:GetFont()
  local width, spacing = font:GetWidth(), font:GetSpacing()

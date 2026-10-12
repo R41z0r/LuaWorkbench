@@ -36,6 +36,8 @@
 
 ### Fixed
 
+- Keep typing responsive in large scripts by updating lexical colors immediately and deferring semantic analysis until a short typing pause.
+
 - Avoid rebuilding the entire colored script while line layout catches up with typing.
 
 - Keep large scripts fully visible and reduce typing overhead by coloring the visible excerpt and reusing unchanged line measurements.

@@ -313,7 +313,7 @@ function A:Tick(input, elapsed)
  end
  if self.pending then
   self.pending = self.pending + elapsed
-  if self.pending >= 0.15 then self.pending = nil; self:Update(input, false, not self.pendingSuggestions) end
+  if self.pending >= (#source > 20000 and 0.45 or 0.15) then self.pending = nil; self:Update(input, false, not self.pendingSuggestions) end
  end
 end
 

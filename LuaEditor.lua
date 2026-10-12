@@ -41,10 +41,13 @@ function Editor:IndentWidth()
  return addon.Workspace and addon.Workspace.db and addon.Workspace.db.options.indentWidth or 4
 end
 
-function Editor:Tokenize(source, maxTokens)
- local tokens, index, length = {}, 1, #source
+function Editor:Tokenize(source, maxTokens, firstSource, lastSource)
+ local tokens, index, length, count = {}, 1, #source, 0
  local function add(kind, finish, closed)
-  tokens[#tokens + 1] = { kind = kind, text = source:sub(index, finish), start = index, finish = finish, closed = closed }
+  count = count + 1
+  if not firstSource or finish >= firstSource then
+   tokens[#tokens + 1] = { kind = kind, text = source:sub(index, math.min(finish, lastSource or finish)), start = index, finish = finish, closed = closed }
+  end
   index = finish + 1
  end
  local function ending(pattern, offset)
@@ -58,8 +61,8 @@ function Editor:Tokenize(source, maxTokens)
   local position = source:find(close, head + 1, true)
   return position and position + #close - 1 or length, position ~= nil
  end
- while index <= length do
-  if maxTokens and #tokens >= maxTokens then
+ while index <= length and (not lastSource or index <= lastSource) do
+  if maxTokens and count >= maxTokens then
    add('plain', length)
    tokens[#tokens].truncated = true
    break
@@ -107,10 +110,15 @@ function Editor:Tokenize(source, maxTokens)
  return tokens
 end
 
-function Editor:Render(source, firstSource, lastSource)
+function Editor:Render(source, firstSource, lastSource, deferred)
  local result, spans, offset = {}, {}, 0
- local tokens = addon.Analysis and addon.Analysis:Get(source).tokens or self:Tokenize(source)
- local apiPaths = addon.APIHelp and addon.APIHelp:Paths(source) or {}
+ local analysis
+ if addon.Analysis then
+  if deferred then analysis = addon.Analysis.cache[source]
+  else analysis = addon.Analysis:Get(source) end
+ end
+ local tokens = analysis and analysis.tokens or self:Tokenize(source, 50000, firstSource, lastSource)
+ local apiPaths = analysis and addon.APIHelp and addon.APIHelp:Paths(source) or {}
  for _, token in ipairs(tokens) do
   if (not firstSource or token.finish >= firstSource) and (not lastSource or token.start <= lastSource) then
   local start = math.max(token.start, firstSource or token.start)
@@ -330,11 +338,15 @@ function Editor:Paint(input)
  -- Let the font string calculate its full height before drawing a new snippet.
  -- Reusing the previous edit box height briefly clips newly wrapped lines.
  overlay:SetHeight(0)
- if state.renderSource ~= source or state.colorRevision ~= self.colorRevision or state.renderFirst ~= first or state.renderLast ~= last then
+ local deferred = #source > 20000
+ local analysis = addon.Analysis and addon.Analysis.cache[source]
+ if state.renderSource ~= source or state.colorRevision ~= self.colorRevision or state.renderFirst ~= first or state.renderLast ~= last
+  or (deferred and state.renderAnalysis ~= analysis) then
   state.colorRevision = self.colorRevision
   state.renderSource, state.renderFirst, state.renderLast = source, first, last
   local rendered
-  rendered, state.renderSpans = self:Render(source, first, last)
+  rendered, state.renderSpans = self:Render(source, first, last, deferred)
+  state.renderAnalysis = analysis
   -- Keep pathological single lines and editors without a viewport fully readable.
   state.nativeText = #rendered > 16000
   if state.nativeText then
@@ -349,6 +361,19 @@ function Editor:Paint(input)
   end
  end
  state.pending = nil
+end
+
+-- Large documents paint lexical colors immediately; semantic work waits for quiet input.
+function Editor:UpdateAnalysis(input, elapsed)
+ local state = input.queryEditor
+ local source = input:GetText()
+ if #source <= 20000 or #source > 200000 or not addon.Analysis then return end
+ if state.analysisSource ~= source then
+  state.analysisSource, state.analysisElapsed = source, 0
+ else state.analysisElapsed = (state.analysisElapsed or 0) + elapsed end
+ local analysis = addon.Analysis.cache[source]
+ if not analysis and state.analysisElapsed >= 0.45 then analysis = addon.Analysis:Get(source) end
+ if analysis and state.renderSource == source and state.renderAnalysis ~= analysis then self:Paint(input) end
 end
 
 function Editor:IsReadOnly(input)
@@ -578,11 +603,12 @@ function Editor:Attach(input)
  end)
  wrap('OnUpdate', function(original, frame, elapsed)
   if original then original(frame, elapsed) end
+  self:UpdateAnalysis(input, elapsed)
   if addon.Autocomplete then addon.Autocomplete:Tick(input, elapsed) end
   state.elapsed = state.elapsed + elapsed
   local first, last = self:VisibleRange(input, frame:GetText())
   if first ~= state.renderFirst or last ~= state.renderLast then state.pending = true end
-  if state.pending and (state.elapsed >= 0.08 or state.renderSource == frame:GetText()) then self:Paint(input) end
+  if state.pending and (#frame:GetText() > 20000 or state.elapsed >= 0.08 or state.renderSource == frame:GetText()) then self:Paint(input) end
   state.caret:SetShown(frame:HasFocus() and state.elapsed % 1 < 0.5)
   state.active:SetShown(frame:HasFocus())
  end)
