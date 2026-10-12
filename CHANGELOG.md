@@ -36,6 +36,8 @@
 
 ### Fixed
 
+- Reduce repeated line-ending conversion work while editing large scripts.
+
 - Keep syntax colors throughout very large scripts and avoid automatic full-document analysis while editing them.
 
 - Reuse unchanged syntax tokens to reduce typing overhead near the end of large scripts.

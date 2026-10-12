@@ -1,7 +1,22 @@
 local _, addon = ...
 local W, UI, L = addon.Workspace, addon.UI, addon.L
 
-function W:NormalizeSource(source) return (source:gsub('\r\n', '\n'):gsub('\r', '\n')) end
+function W:NormalizeSource(source)
+ if not source:find('\r', 1, true) then return source end
+ local cache = self.normalizedSources
+ if cache then
+  for _, entry in ipairs(cache) do if entry.source == source then return entry.value end end
+ end
+ local value = source:gsub('\r\n', '\n'):gsub('\r', '\n')
+ -- Dirty-state checks repeatedly compare the saved and draft versions. Keep at
+ -- most two bounded snapshots; this cache never owns persisted script data.
+ if #source <= 200000 then
+  if not cache then cache = {}; self.normalizedSources = cache end
+  if #cache == 2 then table.remove(cache, 1) end
+  cache[#cache+1] = {source=source, value=value}
+ end
+ return value
+end
 function W:StoreSource(source)
  source = self:NormalizeSource(source)
  return self.db.options.crlf and source:gsub('\n', '\r\n') or source
