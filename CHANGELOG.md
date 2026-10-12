@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-12
+
 ### Added
 
 - Optional IntelliSense with keyboard navigation, Enter/Tab acceptance and parameter hints that remain visible while entering arguments. Request suggestions with Ctrl+Space without interrupting normal cursor navigation.
