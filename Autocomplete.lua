@@ -83,7 +83,7 @@ function A:Alias(context, name)
  if not definition then return end
  local namespace
  for _,entry in ipairs(definition.apiAliases or {}) do
-  if entry.position0 <= context.cursor then namespace = entry.namespace end
+  if entry.position0 <= (context.lookupCursor or context.cursor) then namespace = entry.namespace end
  end
  return namespace or nil
 end
@@ -94,15 +94,15 @@ function A:Value(context, path)
  local definition = root and context.visible[root]
  local value
  for _,entry in ipairs(definition and definition.completionValues or {}) do
-  if entry.position0 <= context.cursor then value=entry.value end
+  if entry.position0 <= (context.lookupCursor or context.cursor) then value=entry.value end
  end
- if value and value.completionInvalidated0 and value.completionInvalidated0 <= context.cursor then return end
+ if value and value.completionInvalidated0 and value.completionInvalidated0 <= (context.lookupCursor or context.cursor) then return end
  for name in path:sub(root and #root+1 or 1):gmatch('[%.:]([%a_][%w_]*)') do
   local history=value and value.completionMembers and value.completionMembers[name]
   value=nil
-  for _,entry in ipairs(history or {}) do if entry.position0 <= context.cursor then value=entry.value end end
+  for _,entry in ipairs(history or {}) do if entry.position0 <= (context.lookupCursor or context.cursor) then value=entry.value end end
  end
- if value and value.completionInvalidated0 and value.completionInvalidated0 <= context.cursor then return end
+ if value and value.completionInvalidated0 and value.completionInvalidated0 <= (context.lookupCursor or context.cursor) then return end
  return value or nil
 end
 
@@ -119,7 +119,7 @@ function A:Suggest(context, manual)
   local owner=self:Value(context,path)
   for name,history in pairs(owner and owner.completionMembers or {}) do
    local value
-   for _,entry in ipairs(history) do if entry.position0 <= context.cursor then value=entry.value end end
+   for _,entry in ipairs(history) do if entry.position0 <= (context.lookupCursor or context.cursor) then value=entry.value end end
    if value and (separator ~= ':' or value.parameters) then
     add(path..separator..name,value.parameters and 'functionName' or 'identifier')
    end
@@ -252,7 +252,9 @@ function A:Draw()
  else self:RestoreArrows() end
  for index, row in ipairs(self.rows) do
   local item = self.items[index]
-  row:SetText(item and ('|c' .. E:Color(item.kind or 'identifier') .. item.name .. '|r') or ''); row:SetShown(item ~= nil)
+  local text = item and ('|c' .. E:Color(item.kind or 'identifier') .. item.name .. '|r') or ''
+  if row:GetText() ~= text then row:SetText(text) end
+  if row:IsShown() ~= (item ~= nil) then row:SetShown(item ~= nil) end
  end
  self.selection:ClearAllPoints(); self.selection:SetPoint('TOPLEFT', 4, -6-((self.selected or 1)-1)*20); self.selection:SetSize(412,20); self.selection:SetShown(count>0)
  self.hint:ClearAllPoints(); self.hint:SetPoint('TOPLEFT', 8, -10-count*20); self.hint:SetWidth(404)
@@ -277,6 +279,7 @@ function A:Update(input, manual, signatureOnly)
  if not context then self:Hide(); return end
  self.lastSource, self.lastCursor, self.lastScript = context.source, context.cursor, addon.Workspace.current
  self.pending = nil
+ context.manual, context.apiRevision = manual, addon.APIHelp.revision
  self.input, self.context, self.selected = input, context, 1
  local previousCall=self.signatureCall
  self.items=signatureOnly and {} or self:Suggest(context,manual)
@@ -284,6 +287,37 @@ function A:Update(input, manual, signatureOnly)
  if signatureOnly and previousCall ~= self.signatureCall then self.signature=nil end
  if #self.items == 0 and not self.signature then self:Hide(); return end
  self:Draw()
+end
+
+-- Only refine the active identifier when both surrounding source regions match.
+-- Reuse scope data at the original position, never shifted future declarations.
+function A:Refine(input, source, cursor)
+ local old = self.context
+ if self.input ~= input or not old or old.apiRevision ~= addon.APIHelp.revision or self.lastScript ~= addon.Workspace.current
+  or not self.panel or not self.panel:IsShown() or source == old.source then return false end
+ local prefix = source:sub(1,cursor):match('([%a_][%w_%.:]*)$') or ''
+ local start = cursor - #prefix
+ if prefix == '' or start ~= old.start
+  or prefix:match('^(.*[%.:])') ~= old.prefix:match('^(.*[%.:])')
+  or source:sub(1,start) ~= old.source:sub(1,old.start)
+  or source:sub(cursor+1) ~= old.source:sub(old.cursor+1) then return false end
+ local selected = self.items and self.items[self.selected or 1]
+ local name = selected and selected.name
+ local context = {source=source,cursor=cursor,prefix=prefix,start=start,
+  analysis=old.analysis,visible=old.visible,inString=old.inString,
+  lookupCursor=old.lookupCursor or old.cursor,manual=old.manual,apiRevision=old.apiRevision}
+ local items = self:Suggest(context, context.manual)
+ if selected and name ~= prefix and name:sub(1,#prefix) == prefix then
+  local present = false
+  for _,item in ipairs(items) do if item.name == name then present=true;break end end
+  if not present then items[math.min(#items+1,self.limit)] = selected end
+ end
+ self.context, self.items, self.selected = context, items, 1
+ for index,item in ipairs(items) do if item.name == name then self.selected=index;break end end
+ self.lastSource, self.lastCursor, self.pending = source,cursor,nil
+ self.keySource, self.keyCursor = nil,nil
+ if #items == 0 and not self.signature then self:Hide() else self:Draw() end
+ return true
 end
 
 function A:RestoreCursor(input)
@@ -303,6 +337,7 @@ function A:Tick(input, elapsed)
  self:RestoreCursor(input)
  local source, cursor = input:GetText(), input.editBox:GetCursorPosition()
  if source ~= self.lastSource or cursor ~= self.lastCursor or addon.Workspace.current ~= self.lastScript then
+  if self:Refine(input,source,cursor) then return end
   self.pendingSuggestions=self.lastSource ~= nil and source ~= self.lastSource
    and self.lastScript == addon.Workspace.current
   local keepSignature=self.input == input and self.signaturePanel and self.signaturePanel:IsShown() and self.signature
@@ -325,6 +360,7 @@ function A:Tick(input, elapsed)
 end
 
 function A:Accept(input)
+ if self.context and input:GetText() ~= self.context.source then self:Refine(input,input:GetText(),input.editBox:GetCursorPosition()) end
  if self.input ~= input or not self.panel or not self.panel:IsShown() or not self.context or not self.items or not self.items[self.selected] then return false end
  local context, name = self.context, self.items[self.selected].name
  if input:GetText() ~= context.source or input.editBox:GetCursorPosition() ~= context.cursor or E:IsReadOnly(input) then self:Hide(); return false end
@@ -350,6 +386,10 @@ end
 
 function A:Arrow(input, key, origin)
  if not self:Enabled(input) then return end
+ if (key == 'UP' or key == 'DOWN') and self.input == input and self.context
+  and input:GetText() ~= self.context.source then
+  if not self:Refine(input,input:GetText(),input.editBox:GetCursorPosition()) then self:Hide();return end
+ end
  if self.input == input and self.panel and self.panel:IsShown() and #self.items>0 and (key == 'UP' or key == 'DOWN')
   and not (_G.IsAltKeyDown and IsAltKeyDown()) and not (_G.IsShiftKeyDown and IsShiftKeyDown()) then
   origin = origin or 'native'

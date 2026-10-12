@@ -36,6 +36,8 @@
 
 ### Fixed
 
+- Update open completion suggestions without flickering while refining a name, retaining the selected match when possible.
+
 - Show automatic completion sooner in large scripts by reusing the context before the typed name.
 
 - Preserve colors of unchanged symbols while typing instead of flashing between lexical and semantic highlighting.
