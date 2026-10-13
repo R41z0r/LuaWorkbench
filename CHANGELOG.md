@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-13
+
+### Fixed
+
+- Show all table entries in dumps instead of skipping entries after the first 30, and retain large dumps in Output.
+
 ## [1.2.0] - 2026-10-12
 
 ### Added
