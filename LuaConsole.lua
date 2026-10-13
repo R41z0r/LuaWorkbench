@@ -30,8 +30,9 @@ function Console:OutputLimit()
 end
 
 function Console:TrimOutput()
- local limit = self:OutputLimit()
- while #self.lines > limit or self.characters > 64000 do
+ if self.dumpBatch then return end
+ local limit = math.max(self:OutputLimit(), self.dumpLineLimit or 0)
+ while #self.lines > limit or self.characters > math.max(64000, self.dumpCharacterLimit or 0) do
   self.characters = self.characters - #self.lines[1] - 1
   table.remove(self.lines, 1)
  end
@@ -87,7 +88,9 @@ end
 
 function Console:Clear(undoable)
  self.undoLines = undoable and #self.lines > 0 and self.lines or nil
+ self.undoDumpLineLimit, self.undoDumpCharacterLimit = self.dumpLineLimit, self.dumpCharacterLimit
  self.lines, self.characters = {}, 0
+ self.dumpLineLimit, self.dumpCharacterLimit = nil, nil
  local workspace = addon.Workspace
  if workspace and workspace.undoOutput then workspace.undoOutput:SetShown(self.undoLines ~= nil) end
  self:Refresh()
@@ -105,6 +108,8 @@ end
 
 function Console:UndoClear()
  if not self.undoLines then return end
+ self.dumpLineLimit = math.max(self.dumpLineLimit or 0, self.undoDumpLineLimit or 0)
+ self.dumpCharacterLimit = math.max(self.dumpCharacterLimit or 0, self.undoDumpCharacterLimit or 0)
  local restored = self.undoLines
  self.undoLines = nil
  for _, line in ipairs(self.lines) do restored[#restored + 1] = line end
@@ -341,7 +346,21 @@ function Console:Dump(value, startKey, prefix, writer)
   if writer then writer(text)
   elseif prefix then self:Write(prefix, text) else self:Write(text) end
  end
- _G.DevTools_RunDump(value, context)
+ -- Dump traversal is synchronous. Restore the shared cutoff even on errors.
+ local cutoff = _G.DEVTOOLS_MAX_ENTRY_CUTOFF
+ local previousBatch = self.dumpBatch
+ local firstLine, firstCharacter = #self.lines, self.characters
+ self.dumpBatch = true
+ _G.DEVTOOLS_MAX_ENTRY_CUTOFF = 0
+ local ok, failure = pcall(_G.DevTools_RunDump, value, context)
+ _G.DEVTOOLS_MAX_ENTRY_CUTOFF = cutoff
+ self.dumpBatch = previousBatch
+ -- Keep enough room for a complete dump until Output is cleared. Ordinary
+ -- output still uses a bounded buffer, including after a failed dump.
+ self.dumpLineLimit = math.max(self.dumpLineLimit or 0, #self.lines - firstLine)
+ self.dumpCharacterLimit = math.max(self.dumpCharacterLimit or 0, self.characters - firstCharacter)
+ self:TrimOutput()
+ if not ok then error(failure, 0) end
  local db = addon.Workspace and addon.Workspace.db
  if hasSecret and db and db.options.secretDumpChat and type(_G.DevTools_Dump) == "function" then
   -- Use Blizzard's own message dispatch, once for the whole dump, without inspecting secret text.
