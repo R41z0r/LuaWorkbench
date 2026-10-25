@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-10-25
+
+### Changed
+
+- Add WoW Retail 12.1.7 to the supported interface versions.
+
 ## [1.2.1] - 2026-10-13
 
 ### Fixed

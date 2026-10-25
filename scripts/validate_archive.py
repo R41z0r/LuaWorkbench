@@ -6,7 +6,7 @@ import re
 import zipfile
 
 PREFIX='!!!LuaWorkbench/'
-INTERFACES = {16001, 20506, 120100, 120105}
+INTERFACES = {16001, 20506, 120100, 120105, 120107}
 
 
 def validate(path, tag):

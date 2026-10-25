@@ -1,4 +1,4 @@
-## Interface: 16001, 20506, 120100, 120105
+## Interface: 16001, 20506, 120100, 120105, 120107
 ## Title: !!!LuaWorkbench
 ## Notes: Lua editor with saved snippets, search and debugging tools.
 ## Notes-deDE: Lua-Editor mit gespeicherten Snippets, Suche und Debugging-Werkzeugen.
