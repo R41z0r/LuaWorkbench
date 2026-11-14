@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep detached output windows above editor text and controls.
+- Align syntax text and wrapped line numbers with the editor's line spacing at small font sizes.
+
 ## [1.2.2] - 2026-10-25
 
 ### Changed

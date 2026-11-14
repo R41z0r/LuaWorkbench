@@ -228,7 +228,10 @@ function Console:UpdateLineNumbers()
 			local height = heights[text] or previousHeights[text]
 			if not height then
 				state.measure:SetText(text ~= "" and text or " ")
-				height = math.max(size + spacing, state.measure:GetStringHeight())
+				-- FontString glyph height can differ from the EditBox font size.
+				-- Count wrapped rows, then use the native editor's row advance.
+				local rows = state.measure:GetNumLines()
+				height = math.max(1, rows or 1) * (size + spacing)
 			end
 			heights[text] = height
 			line = line + 1

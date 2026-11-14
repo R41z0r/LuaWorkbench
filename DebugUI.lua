@@ -414,7 +414,7 @@ function U:PaintSnapshotLine()
  measure:SetFont(font, size, flags); measure:SetSpacing(spacing); measure:SetWidth(math.max(1, width))
  for text in (record.source .. '\n'):gmatch('(.-)\n') do
   measure:SetText(text ~= '' and text:gsub('|', '||') or ' ')
-  height = math.max(size + spacing, measure:GetStringHeight())
+  height = math.max(1, measure:GetNumLines() or 1) * (size + spacing)
   if line == self.snapshotLine then break end
   offset, line = offset + height, line + 1
  end

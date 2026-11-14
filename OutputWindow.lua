@@ -90,6 +90,9 @@ function O:Apply()
  self.applying = true
  if not self.frame then self:Create() end
  local frame, output, mode = self.frame, W.output.frame, self:Mode()
+ -- The editor has several nested frames above the workspace itself.
+ -- A detached sibling must cover the complete editor subtree.
+ frame:SetFrameLevel(math.max(W.window:GetFrameLevel(), addon.Query.Console.input.editBox:GetFrameLevel()) + 20)
  output:ClearAllPoints()
  if mode == 'embedded' then
   output:SetParent(W.window)

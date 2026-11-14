@@ -457,7 +457,18 @@ function Editor:Paint(input)
   overlay:SetFont(font, size, flags)
   state.paintFont, state.paintSize, state.paintFlags = font, size, flags
  end
- if state.paintSpacing ~= spacing then overlay:SetSpacing(spacing); state.paintSpacing = spacing end
+ if state.paintSpacing ~= spacing or state.metricFont ~= font or state.metricSize ~= size or state.metricFlags ~= flags then
+  -- EditBox advances by font size plus spacing. FontString uses the rendered
+  -- glyph height, which may round differently at small sizes and UI scales.
+  if not state.lineMeasure then
+   state.lineMeasure = box:CreateFontString(nil, 'OVERLAY')
+   state.lineMeasure:Hide()
+  end
+  state.lineMeasure:SetFont(font, size, flags)
+  state.lineMeasure:SetText('M')
+  overlay:SetSpacing(size + spacing - state.lineMeasure:GetStringHeight())
+  state.paintSpacing, state.metricFont, state.metricSize, state.metricFlags = spacing, font, size, flags
+ end
  if state.paintWidth ~= width or state.paintLeft ~= left or state.paintTop ~= top or state.paintOffset ~= offset then
   overlay:ClearAllPoints()
   overlay:SetPoint('TOPLEFT', box, 'TOPLEFT', left, -top-offset)
