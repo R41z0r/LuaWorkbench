@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-11-14
+
 ### Fixed
 
 - Keep detached output windows above editor text and controls.
