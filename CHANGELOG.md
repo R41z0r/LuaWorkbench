@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-11-17
+
+### Fixed
+
+- Refresh typed and deleted code even during repeated native cursor/layout updates.
+- Keep the editor caret and current-line highlight aligned with visible code across window heights and wrapped lines.
+- Preserve literal pipes and color codes through code entry, paste, selection, saving and execution without rewriting Lua strings.
+- Keep syntax colors when resizing the editor reveals more text than fits in one syntax overlay.
+- Show relevant script stack frames in error output while retaining the complete captured stack in session diagnostics.
+- Include available global and C_ functions missing from Blizzard’s generated documentation in Knowledge Base searches, with a notice when argument and return documentation is unavailable.
+
 ## [1.2.3] - 2026-11-14
 
 ### Fixed

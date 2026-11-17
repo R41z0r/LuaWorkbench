@@ -15,7 +15,7 @@ function D:Record(message, stack, id, name, event)
  entry.name = name or L.newSnippet
  entry.count = entry.count + 1
  entry.time = _G.date and _G.date('%H:%M:%S') or ''
- entry.stack = stack and Console:Format(stack) or nil
+ entry.stack = stack and Console:FormatStack(stack) or nil
  table.insert(self.errors, 1, entry)
  if #self.errors > 100 then table.remove(self.errors) end
  self.nextOutputError = true
