@@ -83,6 +83,26 @@ function A:Catalog(docs)
  end
  for _, info in ipairs(docs.events or {}) do add(info, 'apiEvents', info.LiteralName or info.Name) end
  for _, info in ipairs(docs.callbacks or {}) do add(info, 'apiCallbacks', info.Name) end
+ -- Older global APIs are not all covered by generated documentation. Include
+ -- available functions without inventing signatures or adding them to the
+ -- documented API index used for highlighting and parameter hints.
+ local function runtime(name, value)
+  if _G.issecretvalue and _G.issecretvalue(value) then return end
+  if type(value) ~= 'function' or self.catalog[name] then return end
+  local info = { Name = name, Documentation = { L.apiUndocumented } }
+  add(info, 'apiFunctions', name)
+  self.catalog[name].runtime = true
+ end
+ for name, value in next, _G do
+  if type(name) == 'string' and name:match('^[%a_][%w_]*$') then
+   runtime(name, value)
+   if name:match('^C_') and not (_G.issecretvalue and _G.issecretvalue(value)) and type(value) == 'table' then
+    for member, fn in next, value do
+     if type(member) == 'string' and member:match('^[%a_][%w_]*$') then runtime(name .. '.' .. member, fn) end
+    end
+   end
+  end
+ end
  self.text = {}
 end
 
@@ -201,8 +221,9 @@ function A:FullDescription(name, rich, links)
  end
  local args = {}
  for _, field in ipairs(info.Arguments or {}) do args[#args + 1] = color(field.Name, 'parameter') .. ((field.Nilable or field.Default ~= nil) and '?' or '') end
- local callable = not entry or entry.kind == 'apiFunctions' or entry.kind == 'apiCallbacks'
- local lines = { color(entry and entry.kind == 'apiCallbacks' and L.apiCallbacks or (callable and L.apiFunction or L[entry.kind]), 'heading'), color(name, 'blizzardFunction') .. (callable and ('(' .. table.concat(args, ', ') .. ')') or '') }
+ local runtime = entry and entry.runtime
+ local callable = not runtime and (not entry or entry.kind == 'apiFunctions' or entry.kind == 'apiCallbacks')
+ local lines = { color(runtime and L.apiRuntimeFunction or (entry and entry.kind == 'apiCallbacks' and L.apiCallbacks or (callable and L.apiFunction or L[entry.kind])), 'heading'), color(name, 'blizzardFunction') .. (callable and ('(' .. table.concat(args, ', ') .. ')') or '') }
  if info.System and self.byInfo and self.byInfo[info.System] then
   lines[#lines + 1] = reference(info.System.Namespace or info.System.Name, self.byInfo[info.System])
  end

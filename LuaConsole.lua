@@ -17,6 +17,34 @@ function Console:Format(value, colorSecrets)
 	return (text:sub(1, 4000):gsub("\t", "    "))
 end
 
+-- Captured traces are retained in diagnostics without the output value limit.
+function Console:FormatStack(value)
+ if _G.issecretvalue and _G.issecretvalue(value) then return '<secret>' end
+ if type(value) == 'string' then return value end
+ return self:Format(value)
+end
+
+function Console:ScriptStack(stack)
+ if type(stack) ~= 'string' or (_G.issecretvalue and _G.issecretvalue(stack)) then return end
+ local lines, lastScript, internal = {}, nil, false
+ for line in (stack .. '\n'):gmatch('(.-)\n') do
+  local location = line:match('^%s*%[(.-)%]:%d+:') or line:match('^%s*(.-):%d+:')
+  if location then
+   location = location:gsub('\\', '/')
+   internal = location:find('/!!!LuaWorkbench/', 1, true) ~= nil
+   location = (location:match('^string "(.*)"$') or location):gsub('^=', '')
+  elseif line:match('^%s*%[C%]:') or line:match('^%s*%(tail call%)') then internal = false end
+  if not internal and line:find('%S') and not line:match('^%s*stack traceback:%s*$') then
+   lines[#lines + 1] = line
+   if location and (location == 'LuaWorkbench' or location:match('^LuaWorkbench%[')
+    or location:match('^LuaWorkbench helper %[')) then lastScript = #lines end
+  end
+ end
+ -- No recognizable script frame: the error message is enough for Output;
+ -- diagnostics still has the unfiltered trace for investigation.
+ if lastScript then return table.concat(lines, '\n', 1, lastScript) end
+end
+
 function Console:SetStatus(text, failed)
  self.statusText, self.statusFailed = text, failed
  if addon.Workspace then addon.Workspace:UpdateStatus() end
@@ -194,7 +222,8 @@ function Console:ReportError(value, stack)
 	self.lastError = { line = tonumber(location), message = message }
  self:SetStatus(L["queryLuaError"] .. " " .. message, true)
 	self:Write(L["queryLuaError"], message)
-	if stack then self:Write(stack) end
+ local scriptStack = self:ScriptStack(stack)
+ if scriptStack then self:Write(scriptStack) end
 	self:ShowError()
 	local input, source = self.input, self.source
 	-- Apply focus after the button's click handling and pending frame layout have finished.
@@ -227,7 +256,7 @@ function Console:UpdateLineNumbers()
 		for text in (source .. "\n"):gmatch("(.-)\n") do
 			local height = heights[text] or previousHeights[text]
 			if not height then
-				state.measure:SetText(text ~= "" and text or " ")
+				state.measure:SetText(text ~= "" and text:gsub('|', '||') or " ")
 				-- FontString glyph height can differ from the EditBox font size.
 				-- Count wrapped rows, then use the native editor's row advance.
 				local rows = state.measure:GetNumLines()
@@ -290,6 +319,7 @@ function Console:UpdateLineNumbers()
 	for index = used + 1, #state.rows do state.rows[index]:Hide() end
  if addon.DebugUI then addon.DebugUI:UpdateGutter(state, visible) end
 	self:UpdateEditorLabel()
+ if input.queryEditor then addon.Query.Editor:UpdateCaret(input) end
 end
 
 function Console:AttachLineNumbers(input)
@@ -410,7 +440,7 @@ function Console:Run(source)
 	local results = pack(xpcall(chunk, function(value)
 		if type(_G.debugstack) == "function" then
 			local ok, stack = pcall(_G.debugstack, 2, 20, 20)
-			if ok then stackTrace = self:Format(stack) end
+			if ok then stackTrace = self:FormatStack(stack) end
 		end
 		return value
 	end))

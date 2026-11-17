@@ -133,7 +133,7 @@ function A:Run(id, snippet, event, ...)
   local results = pack(xpcall(function() return chunk(unpack(arguments, 1, arguments.n)) end, function(value)
    if type(_G.debugstack) == 'function' then
     local captured, trace = pcall(_G.debugstack, 2, 20, 20)
-    if captured then stackTrace = Console:Format(trace) end
+    if captured then stackTrace = Console:FormatStack(trace) end
    end
    return Console:Format(value)
   end))

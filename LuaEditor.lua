@@ -249,20 +249,99 @@ function Editor:Render(source, firstSource, lastSource, deferred)
   if (not firstSource or token.finish >= firstSource) and (not lastSource or token.start <= lastSource) then
   local start = math.max(token.start, firstSource or token.start)
   local finish = math.min(token.finish, lastSource or token.finish)
-  local raw = source:sub(start, finish)
+  -- Each physical line is self-contained so a large viewport can be drawn by
+  -- several bounded font strings, including inside multiline strings/comments.
+  local part = start
+  while part <= finish do
+  local newline = source:find('\n', part, true)
+  local ending = newline and math.min(finish, newline - 1) or finish
+  if ending < part then ending = part end
+  local raw = source:sub(part, ending)
   local text = raw:gsub('|', '||')
-  local retained = not analysis and type(deferred) == 'table' and deferred.colors and deferred.colors[start]
+  local retained = not analysis and type(deferred) == 'table' and deferred.colors and deferred.colors[part]
   local retainedKind = retained and retained.kind == token.kind and retained.text == raw and retained.colorKind
   local colorKind = apiPaths[token.start] and 'blizzardFunction' or token.semanticKind or retainedKind or token.kind
-  local color = self:Color(colorKind)
+  local color = raw ~= '\n' and self:Color(colorKind)
   local rendered = color and ('|c' .. color .. text .. '|r') or text
   local first = offset + (color and 10 or 0) + 1
-  spans[#spans + 1] = { first = first, last = first + #text - 1, source = start, text = raw, kind = token.kind, colorKind = colorKind }
+  spans[#spans + 1] = { first = first, last = first + #text - 1, source = part, text = raw, kind = token.kind, colorKind = colorKind }
   result[#result + 1] = rendered
   offset = offset + #rendered
+  part = ending + 1
+  end
   end
  end
  return table.concat(result), spans
+end
+
+-- WoW's editable text stores literal pipes as ||. Expose source bytes to all
+-- editor consumers; only the native EditBox boundary uses escaped text/offsets.
+function Editor:AttachText(input)
+ local box, native = input.editBox, {wrappers={}}
+ for _, key in ipairs({'GetText','SetText','GetCursorPosition','SetCursorPosition','HighlightText','Insert'}) do native[key] = box[key] end
+ local function encode(text) return (text:gsub('|', '||')) end
+ local function decode(text) return (text:gsub('||', '|')) end
+ local encoded, decoded, nativePipes, sourcePipes = nil, nil, {}, {}
+ local function source()
+  local text = native.GetText(box)
+  if text ~= encoded then
+   encoded, decoded, nativePipes, sourcePipes = text, decode(text), {}, {}
+   local from = 1
+   while true do
+    local first, last = text:find('||', from, true)
+    if not first then break end
+    nativePipes[#nativePipes + 1] = last
+    sourcePipes[#sourcePipes + 1] = last - #nativePipes
+    from = last + 1
+   end
+  end
+  return decoded
+ end
+ local function count(positions, value)
+  local low, high = 0, #positions
+  while low < high do
+   local middle = math.floor((low + high + 1) / 2)
+   if positions[middle] <= value then low = middle else high = middle - 1 end
+  end
+  return low
+ end
+ local function position(value)
+  if value < 0 then return value end
+  source()
+  return value + count(sourcePipes, value)
+ end
+ native.wrappers.GetText = function() return source() end
+ native.wrappers.SetText = function(_, text) return native.SetText(box, type(text)=='string' and encode(text) or text) end
+ native.wrappers.GetCursorPosition = function()
+  source()
+  local cursor = native.GetCursorPosition(box)
+  return cursor - count(nativePipes, cursor)
+ end
+ native.wrappers.SetCursorPosition = function(_, value) return native.SetCursorPosition(box, position(value)) end
+ native.wrappers.HighlightText = function(_, first, last)
+  native.HighlightText(box, position(first or 0), position(last or -1))
+  if addon.EditorActions then addon.EditorActions:Highlight(input, first, last) end
+ end
+ native.wrappers.Insert = function(_, text) return native.Insert(box, type(text)=='string' and encode(text) or text) end
+ local text, cursor = native.GetText(box), native.GetCursorPosition(box)
+ for key, wrapper in pairs(native.wrappers) do box[key] = wrapper end
+ if text:find('|', 1, true) then
+  local setting = input.setting
+  input.setting = true
+  native.SetText(box, encode(text)); box:SetCursorPosition(cursor)
+  input.setting = setting
+ end
+ return native
+end
+
+function Editor:DetachText(input, native)
+ local box = input.editBox
+ local source, cursor = box:GetText(), box:GetCursorPosition()
+ for key, wrapper in pairs(native.wrappers) do if box[key] == wrapper then box[key] = native[key] end end
+ local setting = input.setting
+ input.setting = true
+ native.SetText(box, source); native.SetCursorPosition(box, cursor)
+ input.setting = setting
 end
 
 -- Native font-string indices include markup; editor/token offsets use source bytes.
@@ -327,14 +406,25 @@ function Editor:HoverSourcePosition(input, x, y)
   for _, span in ipairs(state.renderSpans or {}) do
    if (span.kind == 'identifier' or span.kind == 'call')
     and (not firstSource or not lastSource or span.source >= firstSource and span.source <= lastSource) then
-    local areas = font:CalculateScreenAreaFromCharacterSpan(span.first, span.last)
+    local region = span.region
+    local target = region and region.font or font
+    local shift = region and region.first - 1 or 0
+    local targetHeight, targetTextHeight, targetAdvance = height, textHeight, advance
+    local dx, dy = 0, 0
+    if region then
+     local targetLines = target:GetNumLines()
+     targetHeight, targetTextHeight = target:GetHeight(), target:GetStringHeight()
+     targetAdvance = type(targetLines) == 'number' and targetLines > 0 and (targetTextHeight + target:GetSpacing()) / targetLines
+     dx, dy = target:GetLeft() - left, target:GetBottom() - bottom
+    end
+    local areas = target:CalculateScreenAreaFromCharacterSpan(span.first - shift, span.last - shift)
     for _, area in ipairs(areas or {}) do
      -- Native selection rectangles can use a fractional row advance while the
      -- rendered text uses a rounded one. Normalize against the measured text
      -- height and visual line count (including wrapping), from the bottom up.
-     local ratio = advance and area.height > 0 and advance / area.height or 1
-     cache.entries[#cache.entries + 1] = { source = span.source, left = area.left,
-      bottom = area.bottom * ratio + (advance and height - textHeight or 0), width = area.width, height = area.height * ratio }
+     local ratio = targetAdvance and area.height > 0 and targetAdvance / area.height or 1
+     cache.entries[#cache.entries + 1] = { source = span.source, left = area.left + dx,
+      bottom = area.bottom * ratio + (targetAdvance and targetHeight - targetTextHeight or 0) + dy, width = area.width, height = area.height * ratio }
     end
    end
   end
@@ -437,6 +527,135 @@ function Editor:VisibleRange(input, source)
  return first, last, y
 end
 
+-- Native cursor rectangles can accumulate a fractional row advance which is
+-- different from the visible editor rows. Keep the caret and current-row tint
+-- on the same layout as the gutter, without changing the text cursor itself.
+function Editor:CaretGeometry(input, x, y, height)
+ local box, state, layout = input.editBox, input.queryEditor, input.queryLineNumbers
+ local source, cursor = box:GetText(), box:GetCursorPosition()
+ local font, size, flags = box:GetFont()
+ if not layout or layout.source ~= source or layout.font ~= font or layout.size ~= size
+  or layout.flags ~= flags or layout.width ~= box:GetWidth() or layout.spacing ~= box:GetSpacing() then return y, height end
+ local positions, low = layout.positions, 1
+ local high = #positions
+ while low < high do
+  local middle = math.floor((low + high + 1) / 2)
+  if positions[middle].sourceStart <= cursor + 1 then low = middle else high = middle - 1 end
+ end
+ local line = positions[low]
+ if not line then return y, height end
+ local _, _, top = box:GetTextInsets()
+ local advance = size + box:GetSpacing()
+ if line.height <= advance + 0.001 then return -top - line.offset, advance end
+ -- A wrapped logical line has several visual rows. Resolve the character on
+ -- the caret's side of a wrap using the syntax overlay's character rectangles.
+ local overlay, spans = state.overlay, state.renderSpans
+ if state.nativeText or state.renderSource ~= source or not spans
+  or type(overlay.CalculateScreenAreaFromCharacterSpan) ~= 'function' then return y, height end
+ local left = box:GetTextInsets()
+ local character = x > left and cursor or cursor + 1
+ character = math.max(line.sourceStart, math.min(character, line.sourceEnd - 1))
+ low, high = 1, #spans
+ while low < high do
+  local middle = math.floor((low + high) / 2)
+  if spans[middle].source + #spans[middle].text <= character then low = middle + 1 else high = middle end
+ end
+ local span = spans[low]
+ if not span or character < span.source or character >= span.source + #span.text then return y, height end
+ local region = span.region
+ if region then overlay = region.font end
+ local offset = character - span.source
+ -- Byte indices must include escaped pipes and complete UTF-8 characters.
+ while offset > 0 and (span.text:byte(offset + 1) or 0) >= 128 and span.text:byte(offset + 1) < 192 do offset = offset - 1 end
+ local finish = offset + 1
+ while (span.text:byte(finish + 1) or 0) >= 128 and span.text:byte(finish + 1) < 192 do finish = finish + 1 end
+ local first = span.first - (region and region.first - 1 or 0) + #span.text:sub(1, offset):gsub('|', '||')
+ local last = first + #span.text:sub(offset + 1, finish):gsub('|', '||') - 1
+ local areas = overlay:CalculateScreenAreaFromCharacterSpan(first, last)
+ local area = areas and areas[1]
+ local rows = overlay:GetNumLines()
+ if not area or area.height <= 0 or not rows or rows < 1 then return y, height end
+ local visual = math.floor(rows - 1 - area.bottom / area.height + 0.5)
+ local renderedAdvance = (overlay:GetStringHeight() + overlay:GetSpacing()) / rows
+ local offsetY = (region and region.offset or state.paintOffset or 0) + visual * renderedAdvance
+ if offsetY < line.offset - 0.01 or offsetY >= line.offset + line.height - 0.01 then return y, height end
+ return -top - offsetY, renderedAdvance
+end
+
+function Editor:UpdateCaret(input, notify)
+ local state, box = input.queryEditor, input.editBox
+ local cursor = state and state.cursorRect
+ if not cursor or cursor.position ~= box:GetCursorPosition() or cursor.source ~= box:GetText() then return end
+ local x = cursor.x
+ if cursor.position == 0 or cursor.source:sub(cursor.position, cursor.position) == '\n' then x = box:GetTextInsets() end
+ local y, height = self:CaretGeometry(input, x, cursor.y, cursor.height)
+ local changed = state.caretX ~= x or state.caretY ~= y or state.caretHeight ~= height
+ local width = box:GetWidth()
+ if changed or state.caretWidth ~= width then
+  state.caretX, state.caretY, state.caretHeight, state.caretWidth = x, y, height, width
+  state.caret:ClearAllPoints()
+  state.caret:SetPoint('TOPLEFT', box, 'TOPLEFT', x, y)
+  state.caret:SetHeight(height)
+  state.active:ClearAllPoints()
+  state.active:SetPoint('TOPLEFT', box, 'TOPLEFT', 0, y)
+  state.active:SetWidth(width)
+  state.active:SetHeight(height)
+ end
+ -- Scroll-to-caret and completion popups must use the corrected position too.
+ if (notify or changed) and state.cursorCallback then state.cursorCallback(box, x, y, cursor.width, height) end
+end
+
+function Editor:PaintRegions(input, rendered)
+ local state, box, layout = input.queryEditor, input.editBox, input.queryLineNumbers
+ if not layout or not state.renderFirst then return end
+ local positions, low, high = layout.positions, 1, #layout.positions
+ while low < high do
+  local middle = math.floor((low + high + 1) / 2)
+  if positions[middle].sourceStart <= state.renderFirst then low = middle else high = middle - 1 end
+ end
+ local regions, first = {}, 1
+ for index = low, #positions do
+  local line = positions[index]
+  if line.sourceStart > state.renderLast then break end
+  local last = (rendered:find('\n', first, true) or (#rendered + 1)) - 1
+  if last - first + 1 > 16000 then return end
+  regions[#regions + 1] = {first=first, last=last, offset=line.offset}
+  first = last + 2
+ end
+ if #regions == 0 then return end
+ local fonts = state.regionFonts or {state.overlay}
+ state.regionFonts = fonts
+ local texts = state.regionTexts or {}
+ state.regionTexts = texts
+ local face, size, flags = box:GetFont()
+ local left, _, top = box:GetTextInsets()
+ for index, region in ipairs(regions) do
+  local font = fonts[index]
+  if not font then
+   font = box:CreateFontString(nil, 'OVERLAY'); fonts[index] = font
+   font:SetJustifyH('LEFT'); font:SetJustifyV('TOP')
+   font:SetWordWrap(true); font:SetNonSpaceWrap(true)
+  end
+  region.font = font
+  font:SetFont(face, size, flags); font:SetSpacing(state.overlay:GetSpacing())
+  font:ClearAllPoints(); font:SetPoint('TOPLEFT', box, 'TOPLEFT', left, -top-region.offset)
+  font:SetWidth(state.paintWidth); font:SetHeight(0)
+  local text = rendered:sub(region.first, region.last)
+  local previous = index == 1 and state.drawnText or texts[index]
+  if previous ~= text then font:SetText(text) end
+  if index == 1 then state.drawnText = text else texts[index] = text end
+  font:Show()
+ end
+ for index = #regions + 1, #fonts do fonts[index]:Hide() end
+ local index = 1
+ for _, span in ipairs(state.renderSpans or {}) do
+  while index < #regions and span.first > regions[index].last + 1 do index = index + 1 end
+  span.region = regions[index]
+ end
+ state.renderRegions, state.hoverAreas = regions, nil
+ return true
+end
+
 function Editor:Paint(input)
  local state = input.queryEditor
  if not state then return end
@@ -490,22 +709,27 @@ function Editor:Paint(input)
   local rendered
   rendered, state.renderSpans = self:Render(source, first, last, options)
   state.renderAnalysis = analysis
-  -- Keep pathological single lines and editors without a viewport fully readable.
-  state.nativeText = #rendered > 16000
-  if state.nativeText then
-   state.renderSpans = nil
-   if state.renderedText ~= '' then overlay:SetText('') end
-   state.renderedText = ''
-   overlay:Hide()
-   box:SetTextColor(0.8, 0.84, 0.92, 1)
-  else
-   if state.renderedText ~= rendered then overlay:SetText(rendered) end
-   state.renderedText = rendered
-   overlay:Show()
-   box:SetTextColor(1, 1, 1, 0)
-  end
+  state.renderedText = rendered
  end
+ local rendered = state.renderedText or ''
+ local regions = self:PaintRegions(input, rendered)
+ -- Use the same line layout at every viewport height. Switching between one
+ -- multiline font string and separate rows changes pixel rounding at UI scales.
+ state.nativeText = not regions and #rendered > 16000
+ if not regions then
+  state.renderRegions = nil
+  for index = 2, #(state.regionFonts or {}) do state.regionFonts[index]:Hide() end
+  for _, span in ipairs(state.renderSpans or {}) do span.region = nil end
+  local text = state.nativeText and '' or rendered
+  if state.drawnText ~= text then overlay:SetText(text); state.drawnText = text end
+  if state.nativeText then state.renderSpans = nil; overlay:Hide()
+  else overlay:Show() end
+ end
+ if state.nativeText then box:SetTextColor(0.8, 0.84, 0.92, 1)
+ else box:SetTextColor(1, 1, 1, 0) end
  state.pending = nil
+ state.paintElapsed = 0
+ self:UpdateCaret(input)
 end
 
 -- Large documents paint lexical colors immediately; semantic work waits for quiet input.
@@ -607,9 +831,12 @@ function Editor:Attach(input)
  local box = input.editBox
  local state = input.queryEditorCache or {}
  input.queryEditorCache, input.queryEditor = state, state
+ state.textMethods = self:AttachText(input)
  state.boxWidth = box:GetWidth()
  state.renderSource = nil
  state.source, state.scripts, state.busy, state.elapsed, state.keyEdit = box:GetText(), {}, nil, 0, nil
+ state.paintElapsed = 0
+ state.cursorRect, state.cursorCallback = nil, nil
  state.color = { box:GetTextColor() }
  if not state.overlay then
   state.overlay = box:CreateFontString(nil, 'OVERLAY')
@@ -737,24 +964,24 @@ function Editor:Attach(input)
    state.busy = true; frame:SetCursorPosition(completion.keyCursor); state.busy = nil; return
   end
   if not state.busy and frame:GetText() == state.source then state.lastCursor = frame:GetCursorPosition() end
-  if original then original(frame, x, y, width, height) end
-  state.caret:ClearAllPoints()
-  state.caret:SetPoint('TOPLEFT', box, 'TOPLEFT', x, y)
-  state.caret:SetHeight(height)
-  state.active:ClearAllPoints()
-  state.active:SetPoint('TOPLEFT', box, 'TOPLEFT', 0, y)
-  state.active:SetWidth(box:GetWidth())
-  state.active:SetHeight(height)
-  state.elapsed = 0
+  local previous = state.cursorRect
+  local position, source = frame:GetCursorPosition(), frame:GetText()
+  state.cursorRect = {x=x, y=y, width=width, height=height, position=position, source=source}
+  state.cursorCallback = original
+  self:UpdateCaret(input, true)
+  if not previous or previous.position ~= position or previous.source ~= source or previous.x ~= x or previous.y ~= y then state.elapsed = 0 end
  end)
  wrap('OnUpdate', function(original, frame, elapsed)
   if original then original(frame, elapsed) end
   self:UpdateAnalysis(input, elapsed)
   if addon.Autocomplete then addon.Autocomplete:Tick(input, elapsed) end
   state.elapsed = state.elapsed + elapsed
+  -- Cursor/layout notifications may repeat every frame. They must not reset
+  -- the repaint budget, even when the caret is still moving while typing.
+  state.paintElapsed = math.min(0.08, (state.paintElapsed or 0) + elapsed)
   local first, last = self:VisibleRange(input, frame:GetText())
   if first ~= state.renderFirst or last ~= state.renderLast then state.pending = true end
-  if state.pending and (#frame:GetText() > 20000 or state.elapsed >= 0.08 or state.renderSource == frame:GetText()) then self:Paint(input) end
+  if state.pending and (#frame:GetText() > 20000 or state.paintElapsed >= 0.08 or state.renderSource == frame:GetText()) then self:Paint(input) end
   state.caret:SetShown(frame:HasFocus() and state.elapsed % 1 < 0.5)
   state.active:SetShown(frame:HasFocus())
  end)
@@ -914,7 +1141,10 @@ function Editor:Detach(input)
  for _, script in ipairs(state.scripts) do input.editBox:SetScript(script.event, script.original) end
  input.editBox:SetTextColor(unpack(state.color))
  state.overlay:Hide()
+ for index = 2, #(state.regionFonts or {}) do state.regionFonts[index]:Hide() end
  state.caret:Hide()
  state.active:Hide()
  input.queryEditor = nil
+ self:DetachText(input, state.textMethods)
+ state.textMethods = nil
 end

@@ -313,13 +313,19 @@ function A:KeyUp(input)
  end
 end
 
-function A:Track(input)
+function A:Highlight(input, first, last)
  local box,state=input.editBox,input.queryEditor
- if state.selectionHook or not _G.hooksecurefunc then return end
- state.selectionHook=true
- _G.hooksecurefunc(box,'HighlightText',function(_,first,last)
+ if state then
   state.lineBlock = nil
   state.selectionStart,state.selectionEnd=first or 0,last and last>=0 and last or #box:GetText()
   state.selectionUnknown=nil
- end)
+ end
+end
+
+function A:Track(input)
+ local box,state=input.editBox,input.queryEditor
+ -- The text boundary already receives source offsets, before native encoding.
+ if state.textMethods or state.selectionHook or not _G.hooksecurefunc then return end
+ state.selectionHook=true
+ _G.hooksecurefunc(box,'HighlightText',function(_,first,last) self:Highlight(input,first,last) end)
 end
