@@ -184,6 +184,35 @@ function A:Key(input, key)
  if _G.IsMacClient and _G.IsMacClient() and not ctrl and ((alt or meta) and (key=='LEFT' or key=='RIGHT') or meta and not alt and (key=='UP' or key=='DOWN')) then
   return self:Navigate(input,key,meta,shift)
  end
+ 
+ if (key=='UP' or key=='DOWN') and not (ctrl or alt or meta or shift) then
+  local ac = addon.Autocomplete
+  if ac and ac.panel and ac.panel:IsShown() then return end -- let IntelliSense use the arrows
+  local i = cursor
+  while i > 0 and source:sub(i,i) ~= '\n' do i = i-1 end
+  local lineStart, target = i, nil
+  local column = cursor - i
+  -- Still on the spot our last Up/Down left us? Keep using the remembered column.
+  if state.goalCursor == cursor and state.goalColumn then column = state.goalColumn end
+  if key=='UP' then
+   if lineStart == 0 then target = 0 else
+    local prevEnd, j = lineStart-1, lineStart-1
+    while j > 0 and source:sub(j,j) ~= '\n' do j = j-1 end
+    target = math.min(j+column, prevEnd)
+   end
+  else
+   local nextStart = source:find('\n', cursor+1, true)
+   if not nextStart then target = #source else
+    local nextEnd = source:find('\n', nextStart+1, true)
+    target = math.min(nextStart+column, nextEnd and nextEnd-1 or #source)
+   end
+  end
+  
+  state.goalColumn, state.goalCursor = column, target
+  if self:Selection(input) then box:HighlightText(0,0) end
+  box:SetCursorPosition(target)
+  return true
+ end
  if key == 'BACKSPACE' and _G.IsMacClient and _G.IsMacClient() and (ctrl or alt or meta)
   and not E:IsReadOnly(input) and not self:Selection(input) then
   local first = self:BackwardRange(source,cursor,meta and 'line' or (alt and 'word' or 'character'))
